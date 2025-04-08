@@ -1,1 +1,0 @@
-(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[769],{1977:function(n,t,i){(window.__NEXT_P=window.__NEXT_P||[]).push(["/notifications",function(){return i(7670)}])},7670:function(n,t,i){"use strict";i.r(t);var u=i(5893);t.default=()=>(0,u.jsx)("div",{children:"Page Content"})}},function(n){n.O(0,[774,888,179],function(){return n(n.s=1977)}),_N_E=n.O()}]);

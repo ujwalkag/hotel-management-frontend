@@ -8,6 +8,16 @@ const nextConfig = {
     NEXT_PUBLIC_STORAGE_PATH: "/local-storage",
     NEXT_PUBLIC_AUTH_SECRET: "your-secure-secret",
   },
+   async redirects() {
+    return [
+      {
+        source: '/:path+/',
+        destination: '/:path+',
+        permanent: true,
+      },
+    ];
+  },
+
   async rewrites() {
     return [
       {
