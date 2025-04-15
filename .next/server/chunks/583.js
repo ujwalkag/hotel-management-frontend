@@ -1,1 +1,0 @@
-exports.id=583,exports.ids=[583],exports.modules={583:(e,t,i)=>{"use strict";i.r(t),i.d(t,{default:()=>_app});var r=i(997);i(6764),i(1664);var s=i(968),n=i.n(s);let _app=function({Component:e,pageProps:t}){return(0,r.jsxs)(r.Fragment,{children:[r.jsx(n(),{children:r.jsx("meta",{name:"viewport",content:"width=device-width, initial-scale=1"})}),r.jsx(e,{...t})]})}},6764:()=>{}};

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import withRoleGuard from '@/utils/withRoleGuard';
 
 const RestaurantBilling = () => {
   const [items, setItems] = useState([]);
@@ -44,7 +45,12 @@ const RestaurantBilling = () => {
   return (
     <div className="p-4">
       <h2 className="text-xl font-bold mb-4">Restaurant Billing</h2>
-      <input type="text" placeholder="Guest Name" onChange={e => setGuest(e.target.value)} className="border p-2 mb-4 w-full" />
+      <input
+        type="text"
+        placeholder="Guest Name"
+        onChange={e => setGuest(e.target.value)}
+        className="border p-2 mb-4 w-full"
+      />
       <div className="mb-4">
         {items.map(item => (
           <label key={item.id} className="block">
@@ -65,5 +71,6 @@ const RestaurantBilling = () => {
   );
 };
 
-export default RestaurantBilling;
+// ✅ Correct component passed to withRoleGuard
+export default withRoleGuard(RestaurantBilling, ['admin', 'staff']);
 

@@ -1,8 +1,10 @@
+// pages/admin/orders.js
 import { useEffect, useState } from 'react';
+import withRoleGuard from '@/utils/withRoleGuard';
 import axios from '@/utils/axiosInstance';
 import { format } from 'date-fns';
 
-export default function OrdersPage() {
+function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [typeFilter, setTypeFilter] = useState('');
@@ -94,4 +96,6 @@ export default function OrdersPage() {
     </div>
   );
 }
+
+export default withRoleGuard(OrdersPage, ['admin']);
 

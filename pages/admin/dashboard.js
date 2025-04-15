@@ -1,4 +1,5 @@
 // pages/admin/dashboard.js
+import withRoleGuard from '@/utils/withRoleGuard';
 import { useEffect, useState } from "react";
 import axios from "@/utils/axiosInstance";
 import { Bar, Doughnut } from "react-chartjs-2";
@@ -105,5 +106,6 @@ const Card = ({ title, value }) => (
   </div>
 );
 
-export default Dashboard;
+export default withRoleGuard(Dashboard, ['admin']);
+
 

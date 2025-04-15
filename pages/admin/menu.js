@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import withRoleGuard from '@/utils/withRoleGuard';
 
-export default function AdminMenu() {
+function AdminMenu() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', price: '' });
   const [editingId, setEditingId] = useState(null);
@@ -127,4 +128,7 @@ export default function AdminMenu() {
     </div>
   );
 }
+
+// ✅ Final export with role guard
+export default withRoleGuard(AdminMenu, ['admin']);
 

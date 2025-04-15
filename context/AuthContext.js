@@ -5,20 +5,22 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
-  const [role, setRole] = useState(null); // admin or employee
+  const [role, setRole] = useState(null);
   const [username, setUsername] = useState(null);
 
   const router = useRouter();
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("token");
-    const storedRole = localStorage.getItem("role");
-    const storedUsername = localStorage.getItem("username");
+    if (typeof window !== 'undefined') {
+      const storedToken = localStorage.getItem("token");
+      const storedRole = localStorage.getItem("role");
+      const storedUsername = localStorage.getItem("username");
 
-    if (storedToken && storedRole) {
-      setToken(storedToken);
-      setRole(storedRole);
-      setUsername(storedUsername);
+      if (storedToken && storedRole) {
+        setToken(storedToken);
+        setRole(storedRole);
+        setUsername(storedUsername);
+      }
     }
   }, []);
 
@@ -31,7 +33,7 @@ export const AuthProvider = ({ children }) => {
     setUsername(username);
 
     if (role === "admin") {
-      router.push("/dashboard");
+      router.push("/admin/dashboard");
     } else {
       router.push("/staff-dashboard");
     }

@@ -1,9 +1,8 @@
-// pages/admin/billing.js
-
+import withRoleGuard from '@/utils/withRoleGuard';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 
-export default function BillingPage() {
+function BillingPage() {
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
   const [customerName, setCustomerName] = useState('');
@@ -32,7 +31,7 @@ export default function BillingPage() {
   };
 
   const handleQuantityChange = (id, value) => {
-    const updated = selectedItems.map(item => 
+    const updated = selectedItems.map(item =>
       item.id === id ? { ...item, quantity: parseInt(value) || 1 } : item
     );
     setSelectedItems(updated);
@@ -91,9 +90,7 @@ export default function BillingPage() {
                 type="number"
                 min="1"
                 className="w-16 border rounded p-1"
-                value={
-                  selectedItems.find(i => i.id === item.id)?.quantity || 1
-                }
+                value={selectedItems.find(i => i.id === item.id)?.quantity || 1}
                 onChange={(e) => handleQuantityChange(item.id, e.target.value)}
               />
             )}
@@ -114,4 +111,7 @@ export default function BillingPage() {
     </div>
   );
 }
+
+// ✅ Only one default export
+export default withRoleGuard(BillingPage, ['admin']);
 

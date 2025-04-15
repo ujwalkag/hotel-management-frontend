@@ -1,23 +1,24 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import axios from '@/utils/axiosInstance';
+import withRoleGuard from '@/utils/withRoleGuard';
 
-export default function AdminRooms() {
+function AdminRooms() {
   const [rooms, setRooms] = useState([]);
   const [form, setForm] = useState({ room_number: '', room_type: '', price_per_night: '' });
   const [editingRoomId, setEditingRoomId] = useState(null);
+
+  useEffect(() => {
+    fetchRooms();
+  }, []);
 
   const fetchRooms = async () => {
     try {
       const res = await axios.get('/api/rooms/');
       setRooms(res.data);
-    } catch (error) {
-      console.error('Error fetching rooms:', error);
+    } catch (err) {
+      console.error('Failed to fetch rooms:', err);
     }
   };
-
-  useEffect(() => {
-    fetchRooms();
-  }, []);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -33,8 +34,8 @@ export default function AdminRooms() {
       setForm({ room_number: '', room_type: '', price_per_night: '' });
       setEditingRoomId(null);
       fetchRooms();
-    } catch (error) {
-      console.error('Error submitting room:', error);
+    } catch (err) {
+      console.error('Error saving room:', err);
     }
   };
 
@@ -51,8 +52,8 @@ export default function AdminRooms() {
     try {
       await axios.delete(`/api/rooms/${id}/`);
       fetchRooms();
-    } catch (error) {
-      console.error('Error deleting room:', error);
+    } catch (err) {
+      console.error('Error deleting room:', err);
     }
   };
 
@@ -60,7 +61,7 @@ export default function AdminRooms() {
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Room Management</h1>
 
-      <div className="mb-6 space-y-4">
+      <div className="mb-4 space-y-2">
         <input
           type="text"
           name="room_number"
@@ -85,13 +86,16 @@ export default function AdminRooms() {
           onChange={handleChange}
           className="border p-2 w-full"
         />
-        <button onClick={handleSubmit} className="bg-blue-600 text-white px-4 py-2 rounded">
+        <button
+          onClick={handleSubmit}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
           {editingRoomId ? 'Update Room' : 'Add Room'}
         </button>
       </div>
 
-      <h2 className="text-xl font-semibold mb-2">Existing Rooms</h2>
-      <table className="w-full border border-gray-200 text-left">
+      <h2 className="text-xl font-semibold mb-2">Rooms</h2>
+      <table className="w-full border text-left">
         <thead>
           <tr className="bg-gray-100">
             <th className="border px-4 py-2">Room #</th>
@@ -127,4 +131,6 @@ export default function AdminRooms() {
     </div>
   );
 }
+
+export default withRoleGuard(AdminRooms, ['admin']);
 
