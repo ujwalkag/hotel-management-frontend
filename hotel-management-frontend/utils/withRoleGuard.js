@@ -12,19 +12,20 @@ export default function withRoleGuard(Component, allowedRoles = []) {
     useEffect(() => {
       if (typeof window === "undefined") return;
 
-      const token = localStorage.getItem("token");
-      const role = localStorage.getItem("role");
+      const isTokenPresent = !!auth.token;
+      const hasAccess = allowedRoles.includes(auth.role);
 
-      if (!token) {
+      if (!isTokenPresent) {
         router.replace("/login");
-      } else if (!allowedRoles.includes(role)) {
+      } else if (!hasAccess) {
         router.replace("/unauthorized");
       } else {
         setChecked(true);
       }
-    }, []);
+    }, [auth]);
 
-    if (!checked) return <div className="text-center mt-12">Loading...</div>;
+    if (!checked) return <div className="text-center mt-10">Loading...</div>;
+
     return <Component {...props} />;
   };
 }

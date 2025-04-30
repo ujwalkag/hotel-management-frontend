@@ -10,11 +10,31 @@ const nextConfig = {
   },
   async redirects() {
     return [
-    { source: "/rooms", destination: "/admin/rooms", permanent: true },
-    { source: "/menu", destination: "/admin/menu", permanent: true },
-    { source: "/billing/create", destination: "/staff/restaurant-billing", permanent: true },
-    { source: "/admin", destination: "/admin/dashboard", permanent: true },
-    { source: "/staff", destination: "/staff-dashboard", permanent: true },
+      {
+        source: "/rooms",
+        destination: "/admin/rooms",
+        permanent: true,
+      },
+      {
+        source: "/menu",
+        destination: "/admin/menu",
+        permanent: true,
+      },
+      {
+        source: "/billing/create",
+        destination: "/staff/restaurant-billing",
+        permanent: true,
+      },
+      {
+        source: "/admin",
+        destination: "/admin/dashboard",
+        permanent: true,
+      },
+      {
+        source: "/staff",
+        destination: "/staff-dashboard",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

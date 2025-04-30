@@ -12,11 +12,11 @@ const RoomBilling = () => {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    axios.get('/api/rooms/')
+    axios.get('/rooms/')
       .then(res => setRooms(res.data))
       .catch(err => console.error(err));
 
-    axios.get('/api/room-services/')
+    axios.get('/room-services/')
       .then(res => setServices(res.data))
       .catch(err => console.error(err));
   }, []);
@@ -37,7 +37,7 @@ const RoomBilling = () => {
 
   const generateBill = async () => {
     try {
-      await axios.post('/api/room-billings/', {
+      await axios.post('/room-billings/', {
         guest,
         room: roomId,
         services: selectedServices.map(s => s.id),

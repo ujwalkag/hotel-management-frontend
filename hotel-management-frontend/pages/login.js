@@ -4,8 +4,8 @@ import { useRouter } from "next/router";
 import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
-  const { login } = useAuth();
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,16 +22,13 @@ export default function LoginPage() {
       if (!res.ok) throw new Error("Invalid credentials");
 
       const data = await res.json();
-      login({ token: data.access, role: data.role, email: data.email });
 
-      // ✅ Correct role-based redirection
-      if (data.role === "admin") {
-        router.push("/admin/dashboard");
-      } else if (data.role === "staff") {
-        router.push("/staff-dashboard");
-      } else {
-        router.push("/unauthorized");
-      }
+      const role = data.role === "employee" ? "staff" : data.role;
+      login({ token: data.access, role, email: data.email });
+
+      if (role === "admin") router.push("/admin/dashboard");
+      else if (role === "staff") router.push("/staff-dashboard");
+      else router.push("/unauthorized");
     } catch (err) {
       setError("Login failed: " + err.message);
     }

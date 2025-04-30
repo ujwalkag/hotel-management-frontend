@@ -1,14 +1,14 @@
-// components/layouts/AdminLayout.js
+// components/layouts/StaffLayout.js
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 
-export default function AdminLayout({ children }) {
+export default function StaffLayout({ children }) {
   const { logout, auth } = useAuth();
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
-      <header className="bg-indigo-600 text-white p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold">Admin Panel</h1>
+      <header className="bg-green-600 text-white p-4 flex justify-between items-center">
+        <h1 className="text-xl font-bold">Staff Panel</h1>
         <div>
           <span className="mr-4">Welcome, {auth.email}</span>
           <button
@@ -21,11 +21,9 @@ export default function AdminLayout({ children }) {
       </header>
 
       <nav className="bg-white shadow px-4 py-2 flex gap-4">
-        <Link href="/admin/dashboard">Dashboard</Link>
-        <Link href="/admin/billing">Billing</Link>
-        <Link href="/admin/rooms">Rooms</Link>
-        <Link href="/admin/orders">Orders</Link>
-        <Link href="/admin/menu">Menu</Link>
+        <Link href="/staff/room-billing">Room Billing</Link>
+        <Link href="/staff/restaurant-billing">Restaurant Billing</Link>
+        <Link href="/services">Services</Link>
       </nav>
 
       <main className="p-4">{children}</main>

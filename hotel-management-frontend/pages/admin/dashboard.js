@@ -25,12 +25,13 @@ const Dashboard = () => {
     const fetchData = async () => {
       try {
         const [summaryRes, bestRes, revenueRes] = await Promise.all([
-          axios.get("/api/admin/dashboard/summary/"),
-          axios.get("/api/admin/dashboard/best-selling/"),
-          axios.get("/api/admin/dashboard/revenue/"),
+          axios.get("/admin-dashboard/summary/"),
+          axios.get("/admin-dashboard/top-items/"),
+          axios.get("/admin-dashboard/revenue/"),
         ]);
+
         setSummary(summaryRes.data);
-        setBestSellers(bestRes.data.items);
+        setBestSellers(bestRes.data); // ✅ No `.items`
         setRevenueData({
           labels: revenueRes.data.labels,
           data: revenueRes.data.values,

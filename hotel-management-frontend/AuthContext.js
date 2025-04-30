@@ -5,9 +5,8 @@ import { useRouter } from "next/router";
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [auth, setAuth] = useState({ token: null, role: null, email: null });
-  const [isLoaded, setIsLoaded] = useState(false);
   const router = useRouter();
+  const [auth, setAuth] = useState({ token: null, role: null, email: null });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -18,8 +17,6 @@ export const AuthProvider = ({ children }) => {
       if (token && role) {
         setAuth({ token, role, email });
       }
-
-      setIsLoaded(true); // ✅ mark context ready
     }
   }, []);
 
@@ -39,7 +36,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ auth, login, logout, isLoaded }}>
+    <AuthContext.Provider value={{ auth, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,3 +1,5 @@
+
+i// pages/admin/rooms.js
 import { useEffect, useState } from 'react';
 import axios from '@/utils/axiosInstance';
 import withRoleGuard from '@/utils/withRoleGuard';
@@ -13,10 +15,16 @@ function AdminRooms() {
 
   const fetchRooms = async () => {
     try {
-      const res = await axios.get('/api/rooms/');
-      setRooms(res.data);
+      const res = await axios.get('/rooms/');
+      if (Array.isArray(res.data)) {
+        setRooms(res.data);
+      } else {
+        console.error('Expected rooms array but got:', res.data);
+        setRooms([]);
+      }
     } catch (err) {
       console.error('Failed to fetch rooms:', err);
+      setRooms([]);
     }
   };
 
@@ -27,9 +35,9 @@ function AdminRooms() {
   const handleSubmit = async () => {
     try {
       if (editingRoomId) {
-        await axios.put(`/api/rooms/${editingRoomId}/`, form);
+        await axios.put(`/rooms/${editingRoomId}/`, form);
       } else {
-        await axios.post('/api/rooms/', form);
+        await axios.post('/rooms/', form);
       }
       setForm({ room_number: '', room_type: '', price_per_night: '' });
       setEditingRoomId(null);
@@ -50,7 +58,7 @@ function AdminRooms() {
 
   const handleDelete = async (id) => {
     try {
-      await axios.delete(`/api/rooms/${id}/`);
+      await axios.delete(`/rooms/${id}/`);
       fetchRooms();
     } catch (err) {
       console.error('Error deleting room:', err);
@@ -105,27 +113,35 @@ function AdminRooms() {
           </tr>
         </thead>
         <tbody>
-          {rooms.map((room) => (
-            <tr key={room.id}>
-              <td className="border px-4 py-2">{room.room_number}</td>
-              <td className="border px-4 py-2">{room.room_type}</td>
-              <td className="border px-4 py-2">₹{room.price_per_night}</td>
-              <td className="border px-4 py-2 space-x-2">
-                <button
-                  onClick={() => handleEdit(room)}
-                  className="text-blue-600 hover:underline"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(room.id)}
-                  className="text-red-600 hover:underline"
-                >
-                  Delete
-                </button>
+          {Array.isArray(rooms) && rooms.length > 0 ? (
+            rooms.map((room) => (
+              <tr key={room.id}>
+                <td className="border px-4 py-2">{room.room_number}</td>
+                <td className="border px-4 py-2">{room.room_type}</td>
+                <td className="border px-4 py-2">₹{room.price_per_night}</td>
+                <td className="border px-4 py-2 space-x-2">
+                  <button
+                    onClick={() => handleEdit(room)}
+                    className="text-blue-600 hover:underline"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(room.id)}
+                    className="text-red-600 hover:underline"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="4" className="text-center py-4 text-gray-500">
+                No rooms available or failed to load.
               </td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
     </div>

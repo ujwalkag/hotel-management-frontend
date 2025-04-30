@@ -1,134 +1,99 @@
-import { useEffect, useState } from 'react';
-import axios from 'axios';
-import withRoleGuard from '@/utils/withRoleGuard';
+import { useEffect, useState } from "react";
+import withRoleGuard from "@/utils/withRoleGuard";
 
 function AdminMenu() {
   const [items, setItems] = useState([]);
-  const [form, setForm] = useState({ name: '', category: '', price: '' });
-  const [editingId, setEditingId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", price: "", category: "main" });
 
-  const fetchItems = async () => {
-    try {
-      const res = await axios.get('/api/menu-items/');
-      setItems(res.data);
-    } catch (error) {
-      console.error('Error fetching menu items:', error);
-    }
-  };
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   useEffect(() => {
     fetchItems();
   }, []);
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async () => {
-    try {
-      if (editingId) {
-        await axios.put(`/api/menu-items/${editingId}/`, form);
-      } else {
-        await axios.post('/api/menu-items/', form);
-      }
-      setForm({ name: '', category: '', price: '' });
-      setEditingId(null);
-      fetchItems();
-    } catch (error) {
-      console.error('Error submitting item:', error);
-    }
-  };
-
-  const handleEdit = (item) => {
-    setForm({
-      name: item.name,
-      category: item.category,
-      price: item.price,
+  const fetchItems = async () => {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/list/`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
-    setEditingId(item.id);
+    const data = await res.json();
+    setItems(data);
   };
 
-  const handleDelete = async (id) => {
-    try {
-      await axios.delete(`/api/menu-items/${id}/`);
-      fetchItems();
-    } catch (error) {
-      console.error('Error deleting item:', error);
-    }
+  const deleteItem = async (id) => {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/delete/${id}/`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    fetchItems();
+  };
+
+  const startEdit = (item) => {
+    setEditing(item.id);
+    setEditForm({ name: item.name, price: item.price, category: item.category });
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/update/${editing}/`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(editForm),
+    });
+    setEditing(null);
+    fetchItems();
   };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Restaurant Menu Management</h1>
+    <div className="max-w-4xl mx-auto mt-10 p-4 bg-white shadow rounded">
+      <h1 className="text-2xl font-bold mb-6">Menu Items</h1>
 
-      <div className="mb-6 space-y-4">
-        <input
-          type="text"
-          name="name"
-          placeholder="Item Name"
-          value={form.name}
-          onChange={handleChange}
-          className="border p-2 w-full"
-        />
-        <input
-          type="text"
-          name="category"
-          placeholder="Category"
-          value={form.category}
-          onChange={handleChange}
-          className="border p-2 w-full"
-        />
-        <input
-          type="number"
-          name="price"
-          placeholder="Price"
-          value={form.price}
-          onChange={handleChange}
-          className="border p-2 w-full"
-        />
-        <button onClick={handleSubmit} className="bg-green-600 text-white px-4 py-2 rounded">
-          {editingId ? 'Update Item' : 'Add Item'}
-        </button>
-      </div>
-
-      <h2 className="text-xl font-semibold mb-2">Menu Items</h2>
-      <table className="w-full border border-gray-200 text-left">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="border px-4 py-2">Name</th>
-            <th className="border px-4 py-2">Category</th>
-            <th className="border px-4 py-2">Price</th>
-            <th className="border px-4 py-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={item.id}>
-              <td className="border px-4 py-2">{item.name}</td>
-              <td className="border px-4 py-2">{item.category}</td>
-              <td className="border px-4 py-2">₹{item.price}</td>
-              <td className="border px-4 py-2 space-x-2">
-                <button
-                  onClick={() => handleEdit(item)}
-                  className="text-blue-600 hover:underline"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(item.id)}
-                  className="text-red-600 hover:underline"
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {items.map((item) =>
+        editing === item.id ? (
+          <form key={item.id} onSubmit={handleUpdate} className="mb-4">
+            <input
+              className="border p-2 mr-2"
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              required
+            />
+            <input
+              className="border p-2 mr-2"
+              type="number"
+              value={editForm.price}
+              onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
+              required
+            />
+            <select
+              className="border p-2 mr-2"
+              value={editForm.category}
+              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+            >
+              <option value="main">Main</option>
+              <option value="snack">Snack</option>
+              <option value="beverage">Beverage</option>
+            </select>
+            <button className="bg-green-600 text-white px-4 py-1 rounded">Save</button>
+          </form>
+        ) : (
+          <div key={item.id} className="flex justify-between items-center border-b py-2">
+            <div>
+              <p className="font-semibold">{item.name} — ₹{item.price}</p>
+              <p className="text-sm text-gray-500">{item.category}</p>
+            </div>
+            <div className="space-x-2">
+              <button onClick={() => startEdit(item)} className="text-blue-600">Edit</button>
+              <button onClick={() => deleteItem(item.id)} className="text-red-600">Delete</button>
+            </div>
+          </div>
+        )
+      )}
     </div>
   );
 }
 
-// ✅ Final export with role guard
-export default withRoleGuard(AdminMenu, ['admin']);
+export default withRoleGuard(AdminMenu, ["admin"]);
 

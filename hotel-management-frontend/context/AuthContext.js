@@ -1,54 +1,42 @@
-import { createContext, useContext, useEffect, useState } from "react";
+// context/AuthContext.js
+import { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/router";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(null);
-  const [role, setRole] = useState(null);
-  const [username, setUsername] = useState(null);
-
   const router = useRouter();
+  const [auth, setAuth] = useState({ token: null, role: null, email: null });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedToken = localStorage.getItem("token");
-      const storedRole = localStorage.getItem("role");
-      const storedUsername = localStorage.getItem("username");
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("token");
+      const role = localStorage.getItem("role");
+      const email = localStorage.getItem("email");
 
-      if (storedToken && storedRole) {
-        setToken(storedToken);
-        setRole(storedRole);
-        setUsername(storedUsername);
+      if (token && role) {
+        setAuth({ token, role, email });
       }
     }
   }, []);
 
-  const login = ({ token, role, username }) => {
+  const login = ({ token, role, email }) => {
     localStorage.setItem("token", token);
     localStorage.setItem("role", role);
-    localStorage.setItem("username", username);
-    setToken(token);
-    setRole(role);
-    setUsername(username);
-
-    if (role === "admin") {
-      router.push("/admin/dashboard");
-    } else {
-      router.push("/staff-dashboard");
-    }
+    localStorage.setItem("email", email);
+    setAuth({ token, role, email });
   };
 
   const logout = () => {
-    localStorage.clear();
-    setToken(null);
-    setRole(null);
-    setUsername(null);
+    localStorage.removeItem("token");
+    localStorage.removeItem("role");
+    localStorage.removeItem("email");
+    setAuth({ token: null, role: null, email: null });
     router.push("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ token, role, username, login, logout }}>
+    <AuthContext.Provider value={{ auth, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
