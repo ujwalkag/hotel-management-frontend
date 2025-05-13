@@ -1,106 +1,95 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import withRoleGuard from '@/utils/withRoleGuard';
+import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import withRoleGuard from "@/hoc/withRoleGuard";
+import toast from "react-hot-toast";
 
-const RoomBilling = () => {
+function RoomBillingPage() {
+  const { user } = useAuth();
   const [rooms, setRooms] = useState([]);
-  const [services, setServices] = useState([]);
-  const [selectedServices, setSelectedServices] = useState([]);
-  const [guest, setGuest] = useState('');
-  const [roomId, setRoomId] = useState('');
-  const [total, setTotal] = useState(0);
-  const [success, setSuccess] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [daysStayed, setDaysStayed] = useState(1);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    axios.get('/rooms/')
-      .then(res => setRooms(res.data))
-      .catch(err => console.error(err));
-
-    axios.get('/room-services/')
-      .then(res => setServices(res.data))
-      .catch(err => console.error(err));
+    const fetchRooms = async () => {
+      try {
+        const res = await fetch("/api/rooms/");
+        const data = await res.json();
+        setRooms(data);
+      } catch (err) {
+        toast.error("Failed to fetch rooms");
+      }
+    };
+    fetchRooms();
   }, []);
 
-  useEffect(() => {
-    const sum = selectedServices.reduce((acc, item) => acc + item.price, 0);
-    setTotal(sum);
-  }, [selectedServices]);
-
-  const toggleService = (service) => {
-    const exists = selectedServices.find(i => i.id === service.id);
-    if (exists) {
-      setSelectedServices(selectedServices.filter(i => i.id !== service.id));
-    } else {
-      setSelectedServices([...selectedServices, service]);
+  const handleBilling = async () => {
+    if (!selectedRoom || daysStayed <= 0) {
+      toast.error("Select a room and valid number of days");
+      return;
     }
-  };
 
-  const generateBill = async () => {
+    setLoading(true);
     try {
-      await axios.post('/room-billings/', {
-        guest,
-        room: roomId,
-        services: selectedServices.map(s => s.id),
-        total_price: total,
+      const res = await fetch("/api/bills/create/room/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user?.access}`,
+        },
+        body: JSON.stringify({
+          room: selectedRoom,
+          days: daysStayed,
+        }),
       });
-      setSuccess(true);
-      setGuest('');
-      setRoomId('');
-      setSelectedServices([]);
-    } catch (error) {
-      console.error('Error generating room bill:', error);
+
+      if (!res.ok) throw new Error("Failed to create bill");
+      const data = await res.json();
+      toast.success("Room bill created successfully!");
+      console.log("✅ Bill created:", data);
+    } catch (err) {
+      toast.error("Error creating room bill");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-bold mb-4">Room Billing</h2>
-
-      <input
-        type="text"
-        placeholder="Guest Name"
-        value={guest}
-        onChange={(e) => setGuest(e.target.value)}
-        className="border p-2 mb-4 w-full"
-      />
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Create Room Bill</h1>
 
       <select
-        value={roomId}
-        onChange={(e) => setRoomId(e.target.value)}
+        value={selectedRoom || ""}
+        onChange={(e) => setSelectedRoom(e.target.value)}
         className="border p-2 mb-4 w-full"
       >
-        <option value="">Select Room</option>
-        {rooms.map(room => (
+        <option value="" disabled>Select Room</option>
+        {rooms.map((room) => (
           <option key={room.id} value={room.id}>
-            Room {room.room_number} - ₹{room.price_per_night}
+            {room.name} - ₹{room.price}/day
           </option>
         ))}
       </select>
 
-      <h3 className="font-semibold mb-2">Select Services:</h3>
-      <div className="mb-4">
-        {services.map(service => (
-          <label key={service.id} className="block">
-            <input
-              type="checkbox"
-              checked={!!selectedServices.find(i => i.id === service.id)}
-              onChange={() => toggleService(service)}
-            /> {service.name} - ₹{service.price}
-          </label>
-        ))}
-      </div>
+      <input
+        type="number"
+        min={1}
+        value={daysStayed}
+        onChange={(e) => setDaysStayed(parseInt(e.target.value))}
+        className="border p-2 mb-4 w-full"
+        placeholder="Number of days"
+      />
 
-      <div className="mb-2 font-semibold">Total: ₹{total}</div>
-
-      <button onClick={generateBill} className="bg-blue-600 text-white px-4 py-2 rounded">
-        Generate Room Bill
+      <button
+        onClick={handleBilling}
+        className="bg-blue-600 text-white p-2 rounded w-full disabled:opacity-50"
+        disabled={loading}
+      >
+        {loading ? "Processing..." : "Generate Bill"}
       </button>
-
-      {success && <p className="mt-2 text-green-600">Room bill generated successfully!</p>}
     </div>
   );
-};
+}
 
-// ✅ Correct component passed here
-export default withRoleGuard(RoomBilling, ['admin', 'staff']);
+export default withRoleGuard(RoomBillingPage, "staff");
 

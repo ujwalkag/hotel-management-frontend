@@ -1,99 +1,106 @@
 import { useEffect, useState } from "react";
-import withRoleGuard from "@/utils/withRoleGuard";
+import { useAuth } from "@/context/AuthContext";
+import withRoleGuard from "@/hoc/withRoleGuard";
 
-function AdminMenu() {
-  const [items, setItems] = useState([]);
-  const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState({ name: "", price: "", category: "main" });
-
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+function AdminMenuPage() {
+  const { user } = useAuth();
+  const [menuItems, setMenuItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [form, setForm] = useState({ name: "", description: "", price: "", category_id: "", available: true });
 
   useEffect(() => {
-    fetchItems();
-  }, []);
+    fetchMenu();
+    fetchCategories();
+  }, [user]);
 
-  const fetchItems = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/list/`, {
-      headers: { Authorization: `Bearer ${token}` },
+  async function fetchMenu() {
+    const res = await fetch('/api/menu/items/', {
+      headers: { Authorization: `Bearer ${user.access}` }
     });
     const data = await res.json();
-    setItems(data);
-  };
+    setMenuItems(data);
+  }
 
-  const deleteItem = async (id) => {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/delete/${id}/`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+  async function fetchCategories() {
+    const res = await fetch('/api/menu/categories/', {
+      headers: { Authorization: `Bearer ${user.access}` }
     });
-    fetchItems();
-  };
+    const data = await res.json();
+    setCategories(data);
+  }
 
-  const startEdit = (item) => {
-    setEditing(item.id);
-    setEditForm({ name: item.name, price: item.price, category: item.category });
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/update/${editing}/`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editForm),
+  async function handleAdd() {
+    const res = await fetch('/api/menu/items/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.access}` },
+      body: JSON.stringify(form)
     });
-    setEditing(null);
-    fetchItems();
-  };
+    if (res.ok) {
+      setForm({ name: "", description: "", price: "", category_id: "", available: true });
+      fetchMenu();
+      alert("Item Added!");
+    } else {
+      alert("Failed to add item.");
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm("Delete this item?")) return;
+    await fetch(`/api/menu/items/${id}/`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${user.access}` }
+    });
+    fetchMenu();
+  }
 
   return (
-    <div className="max-w-4xl mx-auto mt-10 p-4 bg-white shadow rounded">
-      <h1 className="text-2xl font-bold mb-6">Menu Items</h1>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-6">Menu Management</h1>
 
-      {items.map((item) =>
-        editing === item.id ? (
-          <form key={item.id} onSubmit={handleUpdate} className="mb-4">
-            <input
-              className="border p-2 mr-2"
-              value={editForm.name}
-              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-              required
-            />
-            <input
-              className="border p-2 mr-2"
-              type="number"
-              value={editForm.price}
-              onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
-              required
-            />
-            <select
-              className="border p-2 mr-2"
-              value={editForm.category}
-              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-            >
-              <option value="main">Main</option>
-              <option value="snack">Snack</option>
-              <option value="beverage">Beverage</option>
-            </select>
-            <button className="bg-green-600 text-white px-4 py-1 rounded">Save</button>
-          </form>
-        ) : (
-          <div key={item.id} className="flex justify-between items-center border-b py-2">
+      <div className="mb-8">
+        <input
+          className="border p-2 mr-2"
+          placeholder="Name"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+        />
+        <input
+          className="border p-2 mr-2"
+          placeholder="Price"
+          type="number"
+          value={form.price}
+          onChange={(e) => setForm({ ...form, price: e.target.value })}
+        />
+        <select
+          className="border p-2 mr-2"
+          value={form.category_id}
+          onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+        >
+          <option value="">Select Category</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+        </select>
+        <button onClick={handleAdd} className="bg-green-600 text-white p-2 rounded">
+          Add Menu Item
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {menuItems.map(item => (
+          <div key={item.id} className="border p-4 flex justify-between items-center">
             <div>
-              <p className="font-semibold">{item.name} — ₹{item.price}</p>
-              <p className="text-sm text-gray-500">{item.category}</p>
+              <p className="font-bold">{item.name}</p>
+              <p className="text-gray-500">₹{item.price}</p>
+              {item.category && <p className="text-sm text-gray-400">{item.category.name}</p>}
             </div>
-            <div className="space-x-2">
-              <button onClick={() => startEdit(item)} className="text-blue-600">Edit</button>
-              <button onClick={() => deleteItem(item.id)} className="text-red-600">Delete</button>
-            </div>
+            <button onClick={() => handleDelete(item.id)} className="text-red-600">Delete</button>
           </div>
-        )
-      )}
+        ))}
+      </div>
     </div>
   );
 }
 
-export default withRoleGuard(AdminMenu, ["admin"]);
+export default withRoleGuard(AdminMenuPage, ['admin']);
 

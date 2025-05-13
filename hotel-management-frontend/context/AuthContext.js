@@ -1,42 +1,71 @@
 // context/AuthContext.js
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useState, useEffect, useContext } from "react";
 import { useRouter } from "next/router";
+import toast from "react-hot-toast";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
   const router = useRouter();
-  const [auth, setAuth] = useState({ token: null, role: null, email: null });
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("token");
-      const role = localStorage.getItem("role");
-      const email = localStorage.getItem("email");
+    const access = localStorage.getItem("access");
+    const email = localStorage.getItem("email");
+    const role = localStorage.getItem("role");
 
-      if (token && role) {
-        setAuth({ token, role, email });
-      }
+    if (access && email && role) {
+      setUser({ access, email, role });
     }
   }, []);
 
-  const login = ({ token, role, email }) => {
-    localStorage.setItem("token", token);
-    localStorage.setItem("role", role);
-    localStorage.setItem("email", email);
-    setAuth({ token, role, email });
+  const login = async (email, password) => {
+    try {
+      const res = await fetch("/api/auth/token/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        toast.error("Invalid email or password!");
+        throw new Error("Invalid credentials");
+      }
+
+      const data = await res.json();
+      console.log("✅ Login success:", data);
+
+      // Save credentials
+      localStorage.setItem("access", data.access);
+      localStorage.setItem("refresh", data.refresh);
+      localStorage.setItem("email", data.email);
+      localStorage.setItem("role", data.role);
+
+      setUser({ access: data.access, email: data.email, role: data.role });
+
+      // ✅ Redirect by role
+      if (data.role === "admin") {
+        router.push("/admin/dashboard");
+      } else if (data.role === "staff") {
+        router.push("/staff/dashboard");
+      } else {
+        toast.error("Unknown user role.");
+        router.push("/login");
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      toast.error("Login failed. Please try again.");
+    }
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("email");
-    setAuth({ token: null, role: null, email: null });
+    localStorage.clear();
+    setUser(null);
     router.push("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ auth, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

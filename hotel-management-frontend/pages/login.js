@@ -1,64 +1,58 @@
-// pages/login.js
 import { useState } from "react";
-import { useRouter } from "next/router";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/router";
 
 export default function LoginPage() {
-  const router = useRouter();
   const { login } = useAuth();
+  const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log("Login form submitted", email);
+
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/token/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      const user = await login(email, password);
+      console.log("✅ Login success, response:", user);
 
-      if (!res.ok) throw new Error("Invalid credentials");
-
-      const data = await res.json();
-
-      const role = data.role === "employee" ? "staff" : data.role;
-      login({ token: data.access, role, email: data.email });
-
-      if (role === "admin") router.push("/admin/dashboard");
-      else if (role === "staff") router.push("/staff-dashboard");
-      else router.push("/unauthorized");
+      if (user?.role === "admin") {
+        router.push("/admin/dashboard");
+      } else if (user?.role === "staff") {
+        router.push("/staff/room-billing");
+      } else {
+        setError("Unknown user role");
+      }
     } catch (err) {
-      setError("Login failed: " + err.message);
+      console.error("❌ Login failed:", err);
+      setError("Invalid email or password");
     }
   };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
-      <form onSubmit={handleLogin} className="bg-white p-6 rounded shadow w-96">
-        <h1 className="text-xl font-bold mb-4">Login</h1>
-        {error && <p className="text-red-500 mb-3">{error}</p>}
+    <div className="min-h-screen flex items-center justify-center">
+      <form onSubmit={handleSubmit} className="p-6 bg-white rounded shadow-md space-y-4">
+        <h2 className="text-2xl font-bold text-center">Login</h2>
+        {error && <p className="text-red-500">{error}</p>}
         <input
           type="email"
+          placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          className="mb-3 p-2 w-full border rounded"
+          className="border p-2 w-full"
           required
         />
         <input
           type="password"
+          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          className="mb-4 p-2 w-full border rounded"
+          className="border p-2 w-full"
           required
         />
-        <button
-          type="submit"
-          className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700"
-        >
+        <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded">
           Login
         </button>
       </form>

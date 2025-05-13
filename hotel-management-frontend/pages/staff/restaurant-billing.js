@@ -1,90 +1,108 @@
 import { useEffect, useState } from "react";
-import withRoleGuard from "@/utils/withRoleGuard";
+import { useAuth } from "@/context/AuthContext";
+import withRoleGuard from "@/hoc/withRoleGuard";
 
-function RestaurantBilling() {
-  const [items, setItems] = useState([]);
-  const [selected, setSelected] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [message, setMessage] = useState("");
-
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+function RestaurantBillingPage() {
+  const { user } = useAuth();
+  const [menuItems, setMenuItems] = useState([]);
+  const [selectedItems, setSelectedItems] = useState([]);
 
   useEffect(() => {
-    fetchItems();
-  }, []);
+    async function fetchMenu() {
+      const res = await fetch('/api/menu/', {
+        headers: {
+          Authorization: `Bearer ${user.access}`
+        }
+      });
+      const data = await res.json();
+      setMenuItems(data);
+    }
+    if (user) fetchMenu();
+  }, [user]);
 
-  useEffect(() => {
-    const totalCalc = selected.reduce((sum, id) => {
-      const item = items.find((i) => i.id === id);
-      return sum + (item?.price || 0);
-    }, 0);
-    setTotal(totalCalc);
-  }, [selected, items]);
-
-  const fetchItems = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/list/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setItems(data);
+  const handleSelect = (item) => {
+    const alreadySelected = selectedItems.find((i) => i.id === item.id);
+    if (alreadySelected) {
+      setSelectedItems(selectedItems.filter((i) => i.id !== item.id));
+    } else {
+      setSelectedItems([...selectedItems, { ...item, quantity: 1 }]);
+    }
   };
 
-  const toggleSelect = (id) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  const handleQuantityChange = (id, quantity) => {
+    setSelectedItems(
+      selectedItems.map((item) => item.id === id ? { ...item, quantity: Number(quantity) } : item)
     );
   };
 
   const handleSubmit = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bill/create/`, {
-      method: "POST",
+    const payload = selectedItems.map((item) => ({
+      id: item.id,
+      quantity: item.quantity
+    }));
+
+    const res = await fetch('/api/bills/restaurant/', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${user.access}`
       },
-      body: JSON.stringify({ order_type: "restaurant", items: selected }),
+      body: JSON.stringify({ items: payload })
     });
 
     if (res.ok) {
-      const data = await res.json();
-      setMessage(`✅ Bill created! Total ₹${data.total_price}`);
-      setSelected([]);
+      alert('Restaurant Bill Created Successfully!');
+      setSelectedItems([]);
     } else {
-      setMessage("❌ Error creating bill");
+      alert('Failed to create bill.');
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto mt-10 p-6 bg-white rounded shadow">
-      <h1 className="text-2xl font-bold mb-4">Restaurant Billing</h1>
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Create Restaurant Bill</h1>
 
-      {message && <p className="mb-4 text-indigo-600">{message}</p>}
-
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
-        {items.map((item) => (
-          <label key={item.id} className="flex items-center space-x-2 border p-2 rounded">
-            <input
-              type="checkbox"
-              checked={selected.includes(item.id)}
-              onChange={() => toggleSelect(item.id)}
-            />
-            <span>{item.name} – ₹{item.price}</span>
-          </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {menuItems.map((item) => (
+          <div key={item.id} className="p-4 border rounded flex items-center justify-between">
+            <div>
+              <p className="font-semibold">{item.name}</p>
+              <p className="text-gray-500">₹{item.price}</p>
+            </div>
+            <div>
+              <input
+                type="checkbox"
+                checked={!!selectedItems.find((i) => i.id === item.id)}
+                onChange={() => handleSelect(item)}
+              />
+            </div>
+          </div>
         ))}
       </div>
 
-      <p className="text-lg font-bold mb-4">Total: ₹{total}</p>
-
-      <button
-        className="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700"
-        onClick={handleSubmit}
-        disabled={selected.length === 0}
-      >
-        Generate Bill
-      </button>
+      {selectedItems.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold mb-2">Selected Items:</h2>
+          {selectedItems.map((item) => (
+            <div key={item.id} className="flex items-center space-x-4 mb-2">
+              <p>{item.name}</p>
+              <input
+                type="number"
+                min="1"
+                value={item.quantity}
+                onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                className="border p-1 w-16"
+              />
+            </div>
+          ))}
+          <button onClick={handleSubmit} className="mt-4 bg-blue-600 text-white p-2 rounded">
+            Create Bill
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-export default withRoleGuard(RestaurantBilling, ["staff"]);
+export default withRoleGuard(RestaurantBillingPage, ['staff']);
 
