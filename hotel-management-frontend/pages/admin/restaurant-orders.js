@@ -1,62 +1,69 @@
 // pages/admin/restaurant-orders.js
-import { useEffect, useState } from 'react';
-import withRoleGuard from '@/utils/withRoleGuard';
-import axios from '@/utils/axiosInstance';
+import { useEffect, useState } from "react";
+import withRoleGuard from "@/hoc/withRoleGuard";
+import { useAuth } from "@/context/AuthContext";
+import DashboardLayout from "@/components/DashboardLayout";
 
 function RestaurantOrders() {
-  const [menuItems, setMenuItems] = useState([]);
-  const [orderItems, setOrderItems] = useState([]);
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    const fetchOrders = async () => {
+      try {
+        const res = await fetch("/api/bills/summary/?type=restaurant", {
+          headers: {
+            Authorization: `Bearer ${user?.access}`,
+          },
+        });
+        const data = await res.json();
+        setOrders(data);
+      } catch (err) {
+        console.error("Failed to load restaurant orders");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const fetchOrders = async () => {
-    try {
-      const res = await axios.get('/admin/restaurant-orders/');
-      setOrders(res.data);
-    } catch (error) {
-      console.error('Failed to fetch restaurant orders:', error);
-    }
-  };
+    if (user?.access) fetchOrders();
+  }, [user]);
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Restaurant Orders</h1>
-      <table className="w-full border text-left">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="border px-4 py-2">Order ID</th>
-            <th className="border px-4 py-2">Items</th>
-            <th className="border px-4 py-2">Total</th>
-            <th className="border px-4 py-2">Status</th>
-            <th className="border px-4 py-2">Created At</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((order) => (
-            <tr key={order.id}>
-              <td className="border px-4 py-2">{order.id}</td>
-              <td className="border px-4 py-2">
-                {order.items.map(item => (
-                  <div key={item.id}>{item.name} x {item.quantity}</div>
-                ))}
-              </td>
-              <td className="border px-4 py-2">₹{order.total_price}</td>
-              <td className="border px-4 py-2 capitalize">{order.status}</td>
-              <td className="border px-4 py-2">{new Date(order.created_at).toLocaleString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <DashboardLayout>
+      <div className="p-6 max-w-5xl mx-auto">
+        <h1 className="text-2xl font-bold mb-4">🍽️ Restaurant Orders</h1>
 
-      {orders.length === 0 && (
-        <p className="text-center mt-4">No restaurant orders found.</p>
-      )}
-    </div>
+        {loading ? (
+          <p>Loading...</p>
+        ) : orders.length === 0 ? (
+          <p>No restaurant orders found.</p>
+        ) : (
+          <ul className="space-y-4">
+            {orders.map((bill) => (
+              <li
+                key={bill.id}
+                className="border rounded p-4 shadow-sm bg-white"
+              >
+                <p className="font-semibold text-lg">Total: ₹ {bill.total_amount}</p>
+                <ul className="ml-4 list-disc">
+                  {bill.items.map((item, i) => (
+                    <li key={i}>
+                      {item.name} × {item.quantity}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-sm text-gray-500">
+                  Date: {new Date(bill.created_at).toLocaleString("en-IN")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </DashboardLayout>
   );
 }
 
-export default withRoleGuard(RestaurantOrders, ['admin']);
+export default withRoleGuard(RestaurantOrders, "admin");
 

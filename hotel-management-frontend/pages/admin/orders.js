@@ -1,6 +1,6 @@
 // pages/admin/orders.js
 import { useEffect, useState } from 'react';
-import withRoleGuard from '@/utils/withRoleGuard';
+import withRoleGuard from "@/hoc/withRoleGuard";
 import axios from '@/utils/axiosInstance';
 import { format } from 'date-fns';
 

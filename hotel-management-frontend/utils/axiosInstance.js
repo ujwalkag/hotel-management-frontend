@@ -6,7 +6,7 @@ const instance = axios.create({
 
 instance.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("access");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -15,4 +15,3 @@ instance.interceptors.request.use((config) => {
 });
 
 export default instance;
-

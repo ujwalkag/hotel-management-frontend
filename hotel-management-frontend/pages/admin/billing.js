@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import withRoleGuard from "@/utils/withRoleGuard";
+import withRoleGuard from "@/hoc/withRoleGuard";
 import moment from "moment";
 
 function BillingHistory() {

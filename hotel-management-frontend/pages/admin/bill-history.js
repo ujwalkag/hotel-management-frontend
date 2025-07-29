@@ -5,7 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import Link from "next/link";
 import toast from "react-hot-toast";
 
-function StaffBillHistory() {
+function AdminBillHistory() {
   const { user } = useAuth();
   const [bills, setBills] = useState([]);
   const [filters, setFilters] = useState({
@@ -59,7 +59,7 @@ function StaffBillHistory() {
   return (
     <DashboardLayout>
       <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-2xl font-bold mb-4">📜 Staff Bill History</h1>
+        <h1 className="text-2xl font-bold mb-4">📜 Admin Bill History</h1>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <input
@@ -120,5 +120,5 @@ function StaffBillHistory() {
   );
 }
 
-export default withRoleGuard(StaffBillHistory, ["staff"]);
+export default withRoleGuard(AdminBillHistory, ["admin"]);
 

@@ -1,6 +1,6 @@
 // pages/admin/add-item.js
 import { useState } from "react";
-import withRoleGuard from "@/utils/withRoleGuard";
+import withRoleGuard from "@/hoc/withRoleGuard";
 import { useRouter } from "next/router";
 
 function AddItemPage() {
