@@ -23,6 +23,7 @@
   "homepage": "https://github.com/ujwalkag/hotel-management-frontend#readme",
   "dependencies": {
     "@headlessui/react": "^2.2.0",
+    "@heroicons/react": "^2.2.0",
     "axios": "^1.8.4",
     "chart.js": "^4.4.9",
     "date-fns": "^4.1.0",
