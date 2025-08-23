@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import withRoleGuard from "@/hoc/withRoleGuard";
 import toast from "react-hot-toast";
 import DashboardLayout from "@/components/DashboardLayout";
-
+import axios from "../../utils/axiosInstance";
 function ManageMenu() {
   const { user } = useAuth();
   const [menu, setMenu] = useState([]);

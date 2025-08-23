@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import withRoleGuard from "@/hoc/withRoleGuard";
 import Link from "next/link";
 
+
 function AdminDashboard() {
   const { user, logout } = useAuth();
   const [summary, setSummary] = useState(null);
@@ -54,7 +55,7 @@ function AdminDashboard() {
         <LinkCard href="/admin/bill-history" label="📜 View Bill History / बिल इतिहास देखें" />
         <LinkCard href="/admin/analytics" label="📊 Analytics Dashboard / विश्लेषण डैशबोर्ड" />
       </div>
-    </div>
+         </div>
   );
 }
 
