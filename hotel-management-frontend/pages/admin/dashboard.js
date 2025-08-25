@@ -7,8 +7,8 @@ import Link from "next/link";
 function AdminDashboard() {
   const { user, logout } = useAuth();
   const [summary, setSummary] = useState(null);
-  const [inventorySummary, setInventorySummary] = useState(null);
-  const [recentInventoryItems, setRecentInventoryItems] = useState([]);
+  const [inventoryStats, setInventoryStats] = useState({});
+  const [recentInventoryEntries, setRecentInventoryEntries] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
@@ -26,25 +26,24 @@ function AdminDashboard() {
 
     const fetchInventoryData = async () => {
       try {
-        // Fetch inventory summary
-        const summaryRes = await fetch("/api/inventory/items/stats/", {
+        // ✅ NEW: Use the correct inventory API endpoint
+        const statsRes = await fetch("/api/inventory/entries/dashboard_stats/", {
           headers: { Authorization: `Bearer ${user?.access}` },
         });
-        if (summaryRes.ok) {
-          const summaryData = await summaryRes.json();
-          setInventorySummary(summaryData);
-        }
-
-        // Fetch recent inventory items
-        const itemsRes = await fetch("/api/inventory/items/?limit=10", {
-          headers: { Authorization: `Bearer ${user?.access}` },
-        });
-        if (itemsRes.ok) {
-          const itemsData = await itemsRes.json();
-          setRecentInventoryItems(itemsData.results || itemsData || []);
+        
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setInventoryStats(statsData);
+          setRecentInventoryEntries(statsData.recent_entries || []);
         }
       } catch (err) {
         console.error("Error loading inventory data:", err);
+        // Set empty data if API fails
+        setInventoryStats({
+          current_month_spent: 0,
+          total_categories: 0
+        });
+        setRecentInventoryEntries([]);
       }
     };
 
@@ -53,16 +52,6 @@ function AdminDashboard() {
       fetchInventoryData();
     }
   }, [user]);
-
-  const getStockStatus = (currentStock, minStock) => {
-    if (currentStock === 0) {
-      return { text: 'स्टॉक खत्म', color: 'text-red-600 bg-red-100' };
-    } else if (currentStock <= minStock) {
-      return { text: 'कम स्टॉक', color: 'text-yellow-600 bg-yellow-100' };
-    } else {
-      return { text: 'स्टॉक में', color: 'text-green-600 bg-green-100' };
-    }
-  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -96,7 +85,7 @@ function AdminDashboard() {
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
-          ߓ Inventory / इन्वेंट्री
+          ߓ Stock Tracking / स्टॉक ट्रैकिंग
         </button>
       </div>
 
@@ -123,50 +112,89 @@ function AdminDashboard() {
             <LinkCard href="/admin/manage-rooms" label="ߏ Manage Rooms / कमरा प्रबंधन" />
             <LinkCard href="/admin/bill-history" label="ߓ View Bill History / बिल इतिहास देखें" />
             <LinkCard href="/admin/analytics" label="ߓ Analytics Dashboard / विश्लेषण डैशबोर्ड" />
-            
-            {/* Inventory Navigation Cards */}
-            <LinkCard href="/admin/inventory" label="ߓ Inventory Items / इन्वेंट्री आइटम" />
-            <LinkCard href="/admin/inventory-categories" label="ߓ Inventory Categories / इन्वेंट्री श्रेणी" />
-            <LinkCard href="/admin/inventory-suppliers" label="ߏ Suppliers / आपूर्तिकर्ता" />
           </div>
         </>
       )}
 
-      {/* Inventory Tab Content */}
+      {/* NEW INVENTORY TAB - Stock Tracking System */}
       {activeTab === 'inventory' && (
         <>
-          {/* Inventory Summary Stats */}
-          {inventorySummary && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <StatCard 
-                label="Total Items / कुल आइटम" 
-                value={inventorySummary.total_items || 0} 
-                isCount={true}
-              />
-              <StatCard 
-                label="Categories / श्रेणियाँ" 
-                value={inventorySummary.total_categories || 0} 
-                isCount={true}
-              />
-              <StatCard 
-                label="Low Stock / कम स्टॉक" 
-                value={inventorySummary.low_stock_count || 0} 
-                isCount={true}
-                color="text-yellow-600"
-              />
-              <StatCard 
-                label="Out of Stock / स्टॉक खत्म" 
-                value={inventorySummary.out_of_stock_count || 0} 
-                isCount={true}
-                color="text-red-600"
-              />
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-semibold">Stock Tracking Overview / स्टॉक ट्रैकिंग अवलोकन</h2>
+            <div className="flex space-x-3">
+              <Link 
+                href="/admin/inventory-add-entry" 
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+              >
+                ➕ Add Entry / एंट्री जोड़ें
+              </Link>
+              <Link 
+                href="/admin/inventory" 
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm"
+              >
+                ߓ View All / सभी देखें
+              </Link>
             </div>
-          )}
+          </div>
 
-          {/* Recent Inventory Items */}
-          <div className="bg-white rounded-xl shadow p-6 mb-6">
+          {/* NEW: Inventory Summary Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <StatCard 
+              label="Current Month Spent / इस महीने खर्च" 
+              value={parseFloat(inventoryStats.current_month_spent || 0).toLocaleString('en-IN')}
+              color="text-purple-600"
+              currency="₹"
+            />
+            <StatCard 
+              label="Total Categories / कुल श्रेणियाँ" 
+              value={inventoryStats.total_categories || 0}
+              color="text-green-600"
+              isCount={true}
+            />
+            <StatCard 
+              label="Recent Entries / हाल की एंट्रियां" 
+              value={recentInventoryEntries.length || 0}
+              color="text-blue-600"
+              isCount={true}
+            />
+          </div>
+
+          {/* Quick Action Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+            <QuickActionCard 
+              href="/admin/inventory"
+              icon="ߓ"
+              title="All Entries"
+              subtitle="सभी एंट्रियां"
+              description="View all stock purchases"
+            />
+            <QuickActionCard 
+              href="/admin/inventory-add-entry"
+              icon="➕"
+              title="Add Entry"
+              subtitle="एंट्री जोड़ें"
+              description="Record new purchase"
+            />
+            <QuickActionCard 
+              href="/admin/inventory-categories"
+              icon="ߓ"
+              title="Categories"
+              subtitle="श्रेणियाँ"
+              description="Manage item categories"
+            />
+            <QuickActionCard 
+              href="/admin/inventory"
+              icon="ߓ"
+              title="Reports"
+              subtitle="रिपोर्ट"
+              description="Monthly spending reports"
+            />
+          </div>
+
+          {/* NEW: Recent Inventory Entries */}
+          <div className="bg-white rounded-xl shadow p-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Recent Inventory Items / हाल की इन्वेंट्री आइटम</h2>
+              <h3 className="text-lg font-semibold">Recent Stock Entries / हाल की स्टॉक एंट्रियां</h3>
               <Link 
                 href="/admin/inventory"
                 className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -175,102 +203,69 @@ function AdminDashboard() {
               </Link>
             </div>
 
-            {recentInventoryItems.length > 0 ? (
+            {recentInventoryEntries.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Item Name / आइटम नाम
+                        Date / दिनांक
                       </th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Current Stock / वर्तमान स्टॉक
+                        Item / आइटम
                       </th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Min Level / न्यूनतम स्तर
+                        Category / श्रेणी
                       </th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Status / स्थिति
+                        Quantity / मात्रा
                       </th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Price / कीमत
+                        Total Cost / कुल लागत
+                      </th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
+                        Supplier / आपूर्तिकर्ता
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {recentInventoryItems.slice(0, 8).map((item) => {
-                      const status = getStockStatus(item.current_stock || 0, item.min_stock_level || 0);
-                      return (
-                        <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-2">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{item.name}</div>
-                              <div className="text-xs text-gray-500">SKU: {item.sku}</div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-900">
-                            {item.current_stock || 0} {item.unit || ''}
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-900">
-                            {item.min_stock_level || 0} {item.unit || ''}
-                          </td>
-                          <td className="px-4 py-2">
-                            <span className={`inline-flex px-2 py-1 text-xs rounded-full ${status.color}`}>
-                              {status.text}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-900">
-                            ₹{parseFloat(item.cost_per_unit || 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {recentInventoryEntries.slice(0, 5).map((entry) => (
+                      <tr key={entry.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm text-gray-900">
+                          {new Date(entry.purchase_date).toLocaleDateString('en-IN')}
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="text-sm font-medium text-gray-900">{entry.item_name}</div>
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-900">
+                          {entry.category_name}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-900">
+                          {entry.quantity}
+                        </td>
+                        <td className="px-4 py-2 text-sm font-semibold text-green-600">
+                          ₹{parseFloat(entry.total_cost).toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-900">
+                          {entry.supplier_name}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <p>No inventory items found / कोई इन्वेंट्री आइटम नहीं मिला</p>
+                <div className="text-4xl mb-2">ߓ</div>
+                <p>No stock entries found / कोई स्टॉक एंट्री नहीं मिली</p>
                 <Link 
-                  href="/admin/inventory"
+                  href="/admin/inventory-add-entry"
                   className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
-                  Add Items / आइटम जोड़ें
+                  Add First Entry / पहली एंट्री जोड़ें
                 </Link>
               </div>
             )}
-          </div>
-
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <QuickActionCard 
-              href="/admin/inventory" 
-              icon="ߓ" 
-              title="Manage Items"
-              subtitle="आइटम प्रबंधन"
-              description="Add, edit, or view inventory items"
-            />
-            <QuickActionCard 
-              href="/admin/inventory-categories" 
-              icon="ߓ" 
-              title="Categories"
-              subtitle="श्रेणियाँ"
-              description="Organize items by categories"
-            />
-            <QuickActionCard 
-              href="/admin/inventory-suppliers" 
-              icon="ߏ" 
-              title="Suppliers"
-              subtitle="आपूर्तिकर्ता"
-              description="Manage supplier information"
-            />
-            <QuickActionCard 
-              href="/admin/inventory-alerts" 
-              icon="⚠️" 
-              title="Stock Alerts"
-              subtitle="स्टॉक अलर्ट"
-              description="Monitor low stock items"
-            />
           </div>
         </>
       )}
@@ -278,13 +273,19 @@ function AdminDashboard() {
   );
 }
 
-function StatCard({ label, value, isCount = false, color = "text-blue-600" }) {
-  const displayValue = isCount ? value?.toLocaleString("en-IN") : `₹ ${value?.toLocaleString("en-IN")}`;
+function StatCard({ label, value, isCount = false, color = "text-blue-600", currency = "₹" }) {
+  let displayValue;
+  
+  if (isCount) {
+    displayValue = value?.toLocaleString("en-IN") || "0";
+  } else {
+    displayValue = `${currency} ${value?.toLocaleString("en-IN") || "0"}`;
+  }
   
   return (
     <div className="p-4 bg-white border rounded-xl shadow text-center">
       <h2 className="text-lg font-semibold text-gray-600">{label}</h2>
-      <p className={`text-2xl font-bold ${color}`}>{displayValue}</p>
+      <p className={`text-2xl font-bold mt-2 ${color}`}>{displayValue}</p>
     </div>
   );
 }
