@@ -1,4 +1,4 @@
-// pages/admin/dashboard.js
+// pages/admin/dashboard.js - COMPLETE SIMPLIFIED VERSION
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import withRoleGuard from "@/hoc/withRoleGuard";
@@ -26,7 +26,6 @@ function AdminDashboard() {
 
     const fetchInventoryData = async () => {
       try {
-        // ✅ NEW: Use the correct inventory API endpoint
         const statsRes = await fetch("/api/inventory/entries/dashboard_stats/", {
           headers: { Authorization: `Bearer ${user?.access}` },
         });
@@ -38,7 +37,6 @@ function AdminDashboard() {
         }
       } catch (err) {
         console.error("Error loading inventory data:", err);
-        // Set empty data if API fails
         setInventoryStats({
           current_month_spent: 0,
           total_categories: 0
@@ -89,7 +87,7 @@ function AdminDashboard() {
         </button>
       </div>
 
-      {/* Dashboard Tab Content */}
+      {/* Dashboard Tab */}
       {activeTab === 'dashboard' && (
         <>
           {/* Billing Summary Stats */}
@@ -102,7 +100,7 @@ function AdminDashboard() {
             </div>
           )}
 
-          {/* Navigation Cards */}
+          {/* Main Navigation Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <LinkCard href="/admin/restaurant-billing" label="ߍ️ Restaurant Billing / रेस्टोरेंट बिलिंग" />
             <LinkCard href="/admin/manage-menu" label="ߓ Manage Menu / मेनू प्रबंधन" />
@@ -116,85 +114,62 @@ function AdminDashboard() {
         </>
       )}
 
-      {/* NEW INVENTORY TAB - Stock Tracking System */}
+      {/* Stock Tracking Tab */}
       {activeTab === 'inventory' && (
         <>
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-semibold">Stock Tracking Overview / स्टॉक ट्रैकिंग अवलोकन</h2>
-            <div className="flex space-x-3">
-              <Link 
-                href="/admin/inventory-add-entry" 
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
-              >
-                ➕ Add Entry / एंट्री जोड़ें
-              </Link>
-              <Link 
-                href="/admin/inventory" 
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm"
-              >
-                ߓ View All / सभी देखें
-              </Link>
-            </div>
+            <h2 className="text-2xl font-semibold">Stock Tracking / स्टॉक ट्रैकिंग</h2>
+            <Link 
+              href="/admin/inventory-add-entry" 
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            >
+              ➕ Add Purchase / खरीदारी जोड़ें
+            </Link>
           </div>
 
-          {/* NEW: Inventory Summary Stats */}
+          {/* Simple Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <StatCard 
-              label="Current Month Spent / इस महीने खर्च" 
-              value={parseFloat(inventoryStats.current_month_spent || 0).toLocaleString('en-IN')}
+              label="This Month Spent / इस महीने खर्च" 
+              value={parseFloat(inventoryStats.current_month_spent || 0).toFixed(2)}
               color="text-purple-600"
-              currency="₹"
             />
             <StatCard 
-              label="Total Categories / कुल श्रेणियाँ" 
+              label="Categories / श्रेणियाँ" 
               value={inventoryStats.total_categories || 0}
               color="text-green-600"
               isCount={true}
             />
             <StatCard 
-              label="Recent Entries / हाल की एंट्रियां" 
+              label="Recent Entries / हाल की एंट्री" 
               value={recentInventoryEntries.length || 0}
               color="text-blue-600"
               isCount={true}
             />
           </div>
 
-          {/* Quick Action Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
-            <QuickActionCard 
-              href="/admin/inventory"
-              icon="ߓ"
-              title="All Entries"
-              subtitle="सभी एंट्रियां"
-              description="View all stock purchases"
-            />
+          {/* ✅ ONLY 2 Essential Actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
             <QuickActionCard 
               href="/admin/inventory-add-entry"
               icon="➕"
-              title="Add Entry"
-              subtitle="एंट्री जोड़ें"
-              description="Record new purchase"
-            />
-            <QuickActionCard 
-              href="/admin/inventory-categories"
-              icon="ߓ"
-              title="Categories"
-              subtitle="श्रेणियाँ"
-              description="Manage item categories"
+              title="Add Purchase"
+              subtitle="खरीदारी जोड़ें"
+              description="Record new item purchase with categories"
             />
             <QuickActionCard 
               href="/admin/inventory"
               icon="ߓ"
-              title="Reports"
-              subtitle="रिपोर्ट"
-              description="Monthly spending reports"
+              title="View All & Reports"
+              subtitle="सभी देखें और रिपोर्ट"
+              description="See all purchases & monthly reports"
             />
           </div>
 
-          {/* NEW: Recent Inventory Entries */}
+          {/* Recent Entries Table */}
           <div className="bg-white rounded-xl shadow p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">Recent Stock Entries / हाल की स्टॉक एंट्रियां</h3>
+              <h3 className="text-lg font-semibold">Recent Purchases / हाल की खरीदारी</h3>
               <Link 
                 href="/admin/inventory"
                 className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -208,24 +183,12 @@ function AdminDashboard() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Date / दिनांक
-                      </th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Item / आइटम
-                      </th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Category / श्रेणी
-                      </th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Quantity / मात्रा
-                      </th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Total Cost / कुल लागत
-                      </th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                        Supplier / आपूर्तिकर्ता
-                      </th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Date</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Item</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Category</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Qty</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Cost</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Supplier</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -234,10 +197,10 @@ function AdminDashboard() {
                         <td className="px-4 py-2 text-sm text-gray-900">
                           {new Date(entry.purchase_date).toLocaleDateString('en-IN')}
                         </td>
-                        <td className="px-4 py-2">
-                          <div className="text-sm font-medium text-gray-900">{entry.item_name}</div>
+                        <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                          {entry.item_name}
                         </td>
-                        <td className="px-4 py-2 text-sm text-gray-900">
+                        <td className="px-4 py-2 text-sm text-gray-500">
                           {entry.category_name}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-900">
@@ -257,12 +220,12 @@ function AdminDashboard() {
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <div className="text-4xl mb-2">ߓ</div>
-                <p>No stock entries found / कोई स्टॉक एंट्री नहीं मिली</p>
+                <p>No purchases recorded yet / अभी तक कोई खरीदारी दर्ज नहीं की गई</p>
                 <Link 
                   href="/admin/inventory-add-entry"
                   className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
-                  Add First Entry / पहली एंट्री जोड़ें
+                  Add First Purchase / पहली खरीदारी जोड़ें
                 </Link>
               </div>
             )}
@@ -273,14 +236,10 @@ function AdminDashboard() {
   );
 }
 
-function StatCard({ label, value, isCount = false, color = "text-blue-600", currency = "₹" }) {
-  let displayValue;
-  
-  if (isCount) {
-    displayValue = value?.toLocaleString("en-IN") || "0";
-  } else {
-    displayValue = `${currency} ${value?.toLocaleString("en-IN") || "0"}`;
-  }
+function StatCard({ label, value, isCount = false, color = "text-blue-600" }) {
+  const displayValue = isCount 
+    ? (value?.toLocaleString("en-IN") || "0")
+    : `₹ ${value?.toLocaleString("en-IN") || "0"}`;
   
   return (
     <div className="p-4 bg-white border rounded-xl shadow text-center">
@@ -305,14 +264,12 @@ function QuickActionCard({ href, icon, title, subtitle, description }) {
   return (
     <Link
       href={href}
-      className="block p-4 bg-white border rounded-xl shadow hover:shadow-lg transition"
+      className="block p-4 bg-white border rounded-xl shadow hover:shadow-lg transition text-center"
     >
-      <div className="text-center">
-        <div className="text-3xl mb-2">{icon}</div>
-        <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
-        <p className="text-sm text-gray-500 mb-2">{subtitle}</p>
-        <p className="text-xs text-gray-400">{description}</p>
-      </div>
+      <div className="text-3xl mb-2">{icon}</div>
+      <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+      <p className="text-sm text-gray-500 mb-2">{subtitle}</p>
+      <p className="text-xs text-gray-400">{description}</p>
     </Link>
   );
 }
