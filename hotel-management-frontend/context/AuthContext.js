@@ -1,3 +1,4 @@
+
 import { createContext, useState, useEffect, useContext } from "react";
 import { useRouter } from "next/router";
 import toast from "react-hot-toast";
@@ -12,16 +13,25 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const access = sessionStorage.getItem("access");
     const refresh = sessionStorage.getItem("refresh");
-    const email = sessionStorage.getItem("email");
-    const role = sessionStorage.getItem("role");
+    
+    // Get ALL user data from sessionStorage
+    const userData = {
+      email: sessionStorage.getItem("email"),
+      role: sessionStorage.getItem("role"),
+      can_create_orders: sessionStorage.getItem("can_create_orders") === 'true',
+      can_generate_bills: sessionStorage.getItem("can_generate_bills") === 'true',
+      can_access_kitchen: sessionStorage.getItem("can_access_kitchen") === 'true',
+      first_name: sessionStorage.getItem("first_name"),
+      last_name: sessionStorage.getItem("last_name")
+    };
 
-    if (access && refresh && email && role) {
+    if (access && refresh && userData.email && userData.role) {
       const payload = parseJwt(access);
       const expiry = payload?.exp * 1000;
       if (Date.now() >= expiry) {
         refreshAccessToken(refresh);
       } else {
-        setUser({ access, email, role });
+        setUser({ access, ...userData });
         setLoading(false);
         const timeout = setTimeout(
           () => refreshAccessToken(refresh),
@@ -55,11 +65,22 @@ export const AuthProvider = ({ children }) => {
       }
       const data = await res.json();
       const newAccess = data.access;
-      const email = sessionStorage.getItem("email");
-      const role = sessionStorage.getItem("role");
+      
+      // Get stored user data
+      const userData = {
+        email: sessionStorage.getItem("email"),
+        role: sessionStorage.getItem("role"),
+        can_create_orders: sessionStorage.getItem("can_create_orders") === 'true',
+        can_generate_bills: sessionStorage.getItem("can_generate_bills") === 'true',
+        can_access_kitchen: sessionStorage.getItem("can_access_kitchen") === 'true',
+        first_name: sessionStorage.getItem("first_name"),
+        last_name: sessionStorage.getItem("last_name")
+      };
+      
       sessionStorage.setItem("access", newAccess);
-      setUser({ access: newAccess, email, role });
+      setUser({ access: newAccess, ...userData });
       setLoading(false);
+      
       const payload = parseJwt(newAccess);
       const nextExpiry = payload.exp * 1000;
       const timeout = setTimeout(
@@ -86,17 +107,41 @@ export const AuthProvider = ({ children }) => {
         throw new Error("Invalid credentials");
       }
       const data = await res.json();
-      const { access, refresh, email: userEmail, role } = data;
-      sessionStorage.setItem("access", access);
-      sessionStorage.setItem("refresh", refresh);
-      sessionStorage.setItem("email", userEmail);
-      sessionStorage.setItem("role", role);
-      setUser({ access, email: userEmail, role });
+      
+      // Store ALL user data in sessionStorage
+      sessionStorage.setItem("access", data.access);
+      sessionStorage.setItem("refresh", data.refresh);
+      sessionStorage.setItem("email", data.email);
+      sessionStorage.setItem("role", data.role);
+      sessionStorage.setItem("can_create_orders", data.can_create_orders?.toString() || 'false');
+      sessionStorage.setItem("can_generate_bills", data.can_generate_bills?.toString() || 'false');
+      sessionStorage.setItem("can_access_kitchen", data.can_access_kitchen?.toString() || 'false');
+      sessionStorage.setItem("first_name", data.first_name || '');
+      sessionStorage.setItem("last_name", data.last_name || '');
+      
+      const userData = {
+        access: data.access,
+        email: data.email,
+        role: data.role,
+        can_create_orders: data.can_create_orders || false,
+        can_generate_bills: data.can_generate_bills || false,
+        can_access_kitchen: data.can_access_kitchen || false,
+        first_name: data.first_name || '',
+        last_name: data.last_name || ''
+      };
+      
+      setUser(userData);
       setLoading(false);
-      if (role === "admin") {
+      
+      // Enhanced routing based on role and permissions
+      if (data.role === "admin") {
         router.push("/admin/dashboard");
-      } else if (role === "staff") {
+      } else if (data.role === "staff") {
         router.push("/staff/dashboard");
+      } else if (data.role === "waiter") {
+        router.push("/waiter/mobile-orders");
+      } else if (data.role === "biller") {
+        router.push("/biller/dashboard");
       } else {
         toast.error("Unknown user role.");
         router.push("/login");
@@ -128,7 +173,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
