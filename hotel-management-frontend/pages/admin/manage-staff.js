@@ -31,6 +31,7 @@ function ManageStaff() {
       
       if (res.ok) {
         const data = await res.json();
+        console.log('Staff data:', data);
         setStaff(Array.isArray(data) ? data : data.results || []);
       } else {
         console.error('Staff API error:', res.status);
@@ -62,13 +63,14 @@ function ManageStaff() {
       });
 
       if (res.ok) {
+        const data = await res.json();
         toast.success(`${newStaff.role.toUpperCase()} created successfully!`);
         setNewStaff({ email: "", password: "", role: "staff" });
         setShowAddModal(false);
         fetchStaff();
       } else {
-        const data = await res.json();
-        toast.error(`Error: ${data?.error || "Something went wrong"}`);
+        const errorData = await res.json();
+        toast.error(`Error: ${errorData?.error || "Something went wrong"}`);
       }
     } catch (err) {
       console.error(err);
@@ -173,7 +175,6 @@ function ManageStaff() {
     fetchStaff();
   }, [user]);
 
-  // Show Add button only if user can manage staff
   const canManageStaff = user?.role === 'admin' || user?.can_generate_bills;
 
   return (
@@ -183,7 +184,7 @@ function ManageStaff() {
           {/* Header */}
           <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">ߑ Staff Management</h1>
+              <h1 className="text-2xl font-bold text-gray-900">ߑ Staff Role Management</h1>
               <p className="mt-1 text-sm text-gray-600">Add, edit, and manage staff roles and permissions</p>
             </div>
             
@@ -232,15 +233,15 @@ function ManageStaff() {
                           <div className="flex gap-4 text-sm text-gray-600">
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${s.can_create_orders ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                              <span>Orders</span>
+                              <span>Mobile Orders</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${s.can_generate_bills ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                              <span>Bills</span>
+                              <span>Generate Bills</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${s.can_access_kitchen ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                              <span>Kitchen</span>
+                              <span>Kitchen Access</span>
                             </div>
                           </div>
                         </div>
@@ -263,7 +264,7 @@ function ManageStaff() {
                               className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors"
                               disabled={loading}
                             >
-                              ✏️ Edit
+                              ✏️ Edit Role
                             </button>
                             
                             <button
@@ -362,7 +363,7 @@ function ManageStaff() {
       {showEditModal && editingStaff && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">✏️ Edit: {editingStaff.email}</h2>
+            <h2 className="text-xl font-bold mb-4">✏️ Edit Role: {editingStaff.email}</h2>
             
             <div className="space-y-4">
               <div>

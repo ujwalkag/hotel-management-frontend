@@ -103,6 +103,7 @@ function AdminDashboard() {
           {/* Main Navigation Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
   		<LinkCard href="/admin/manage-menu" label="🍽️ Menu Management / मेन्यू प्रबंधन" />
+	        <LinkCard href="//admin/manage-categories" label="🍽️  Menu categories / मेन्यू प्रबंधन" />
   		<LinkCard href="/admin/manage-rooms" label="🏨 Room Management / कमरा प्रबंधन" />
  		<LinkCard href="/admin/manage-staff" label="👤 Basic Staff / बेसिक स्टाफ" />
   		<LinkCard href="/admin/staff-management" label="👥 Staff Management / कर्मचारी प्रबंधन" />
@@ -115,7 +116,14 @@ function AdminDashboard() {
 	</div>
 	      {/* NEW: Enhanced Quick Actions */}
 	<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  		<QuickActionCard
+  	      <QuickActionCard 
+  			href="/admin/manage-categories"
+ 		        icon="ߏ️"
+  			title="Menu Categories"
+  			subtitle="Manage food categories"
+  			description="Add and organize menu categories"
+		/>	
+	      <QuickActionCard
     			href="/admin/staff-management"
     			icon="ߑ"
     			title="Staff Management"

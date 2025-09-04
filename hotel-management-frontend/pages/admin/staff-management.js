@@ -1,12 +1,10 @@
-
-// pages/admin/staff-management.js - Complete Staff Management System  
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useLanguage } from '@/context/LanguageContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
 import toast from 'react-hot-toast';
 
-function StaffManagement() {
+function CompleteStaffManagement() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const [staff, setStaff] = useState([]);
@@ -17,10 +15,50 @@ function StaffManagement() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
 
+  // Modals
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [showPayrollModal, setShowPayrollModal] = useState(false);
+
+  // Forms
+  const [staffForm, setStaffForm] = useState({
+    full_name: '',
+    phone: '',
+    department: 'service',
+    position: '',
+    base_salary: '',
+    hourly_rate: '',
+    user_email: '',
+    user_password: '',
+    user_role: 'staff'
+  });
+
+  const [attendanceForm, setAttendanceForm] = useState({
+    staff_id: '',
+    date: new Date().toISOString().split('T')[0],
+    status: 'present',
+    check_in_time: '',
+    check_out_time: '',
+    notes: ''
+  });
+
   useEffect(() => {
-    fetchStaff();
-    fetchAttendance();
-  }, [currentMonth, currentYear]);
+    fetchAllData();
+  }, [currentMonth, currentYear, user]);
+
+  const fetchAllData = async () => {
+    if (!user?.access) return;
+
+    try {
+      setLoading(true);
+      await Promise.all([
+        fetchStaff(),
+        fetchAttendance()
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchStaff = async () => {
     try {
@@ -51,10 +89,116 @@ function StaffManagement() {
     }
   };
 
-  const markAttendance = async (staffId, status) => {
-    setLoading(true);
+  const createStaffProfile = async () => {
+    if (!staffForm.full_name || !staffForm.user_email) {
+      toast.error('Name and email are required');
+      return;
+    }
+
     try {
+      setLoading(true);
+      
+      // First create user account
+      const userResponse = await fetch('/api/users/staff/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.access}`
+        },
+        body: JSON.stringify({
+          email: staffForm.user_email,
+          password: staffForm.user_password || 'default123',
+          role: staffForm.user_role
+        })
+      });
+
+      if (!userResponse.ok) {
+        const error = await userResponse.json();
+        toast.error('Failed to create user: ' + (error.error || 'Unknown error'));
+        return;
+      }
+
+      const userData = await userResponse.json();
+
+      // Then create staff profile
+      const profileResponse = await fetch('/api/staff/profiles/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.access}`
+        },
+        body: JSON.stringify({
+          user: userData.user.id,
+          full_name: staffForm.full_name,
+          phone: staffForm.phone,
+          department: staffForm.department,
+          position: staffForm.position,
+          base_salary: parseFloat(staffForm.base_salary) || 0,
+          hourly_rate: parseFloat(staffForm.hourly_rate) || 0
+        })
+      });
+
+      if (profileResponse.ok) {
+        toast.success('Staff profile created successfully');
+        setShowStaffModal(false);
+        setStaffForm({
+          full_name: '', phone: '', department: 'service', position: '',
+          base_salary: '', hourly_rate: '', user_email: '', user_password: '', user_role: 'staff'
+        });
+        fetchStaff();
+      } else {
+        const error = await profileResponse.json();
+        toast.error('Failed to create profile: ' + (error.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error creating staff:', error);
+      toast.error('Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markAttendance = async () => {
+    if (!attendanceForm.staff_id || !attendanceForm.date) {
+      toast.error('Staff and date are required');
+      return;
+    }
+
+    try {
+      setLoading(true);
       const response = await fetch('/api/staff/attendance/mark_attendance/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.access}`
+        },
+        body: JSON.stringify(attendanceForm)
+      });
+
+      if (response.ok) {
+        toast.success('Attendance marked successfully');
+        setShowAttendanceModal(false);
+        setAttendanceForm({
+          staff_id: '', date: new Date().toISOString().split('T')[0],
+          status: 'present', check_in_time: '', check_out_time: '', notes: ''
+        });
+        fetchAttendance();
+      } else {
+        const error = await response.json();
+        toast.error('Failed to mark attendance: ' + (error.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error marking attendance:', error);
+      toast.error('Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generatePayroll = async (staffId) => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/staff/generate_payroll/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -62,408 +206,383 @@ function StaffManagement() {
         },
         body: JSON.stringify({
           staff_id: staffId,
-          status: status,
-          date: new Date().toISOString().split('T')[0]
+          month: currentMonth,
+          year: currentYear
         })
       });
 
       if (response.ok) {
-        fetchAttendance();
-        toast.success(`Attendance marked as ${status} successfully!`);
+        const data = await response.json();
+        toast.success(`Payroll generated for ${data.payroll.staff_name}`);
+        console.log('Payroll data:', data.payroll);
+        // You can display the payroll data in a modal or download it
       } else {
         const error = await response.json();
-        toast.error('Failed to mark attendance: ' + (error.error || 'Unknown error'));
+        toast.error('Failed to generate payroll: ' + (error.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Error marking attendance:', error);
-      toast.error('Network error occurred');
+      console.error('Error generating payroll:', error);
+      toast.error('Network error');
     } finally {
       setLoading(false);
     }
   };
 
-  const getAttendanceStatus = (staffId) => {
-    const today = new Date().toISOString().split('T')[0];
-    const todayAttendance = attendanceRecords.find(
-      record => record.staff === staffId && record.date === today
-    );
-    return todayAttendance ? todayAttendance.status : 'not_marked';
+  const deleteStaff = async (staffId) => {
+    if (!confirm('Are you sure you want to delete this staff member?')) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/staff/profiles/${staffId}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${user.access}` }
+      });
+
+      if (response.ok) {
+        toast.success('Staff member deleted successfully');
+        fetchStaff();
+      } else {
+        const error = await response.json();
+        toast.error('Failed to delete staff: ' + (error.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error deleting staff:', error);
+      toast.error('Network error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getMonthlyStats = (staffId) => {
     const staffAttendance = attendanceRecords.filter(record => record.staff === staffId);
     const present = staffAttendance.filter(record => record.status === 'present').length;
     const absent = staffAttendance.filter(record => record.status === 'absent').length;
-    const totalHours = staffAttendance.reduce((sum, record) => sum + (record.total_hours || 8), 0);
-    const overtimeHours = staffAttendance.reduce((sum, record) => sum + (record.overtime_hours || 0), 0);
+    const totalHours = staffAttendance.reduce((sum, record) => sum + (parseFloat(record.total_hours) || 0), 0);
+    const overtimeHours = staffAttendance.reduce((sum, record) => sum + (parseFloat(record.overtime_hours) || 0), 0);
 
     return { present, absent, totalHours, overtimeHours };
   };
 
-  const tabs = [
-    { id: 'overview', label: language === 'hi' ? 'अवलोकन' : 'Overview' },
-    { id: 'attendance', label: language === 'hi' ? 'उपस्थिति' : 'Attendance' },
-    { id: 'payroll', label: language === 'hi' ? 'वेतन' : 'Payroll' }
-  ];
-
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="bg-white rounded-lg shadow-lg">
-        {/* Header */}
-        <div className="p-6 border-b">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">
-                👥 {language === 'hi' ? 'कर्मचारी प्रबंधन' : 'Staff Management'}
-              </h1>
-              <p className="text-gray-600">
-                {language === 'hi' 
-                  ? 'उपस्थिति, वेतन, और कर्मचारी जानकारी प्रबंधित करें'
-                  : 'Manage attendance, payroll, and staff information'
-                }
-              </p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <select
-                value={currentMonth}
-                onChange={(e) => setCurrentMonth(Number(e.target.value))}
-                className="border rounded px-3 py-2"
-              >
-                {Array.from({length: 12}, (_, i) => (
-                  <option key={i + 1} value={i + 1}>
-                    {new Date(2024, i).toLocaleString(language === 'hi' ? 'hi-IN' : 'default', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={currentYear}
-                onChange={(e) => setCurrentYear(Number(e.target.value))}
-                className="border rounded px-3 py-2"
-              >
-                {Array.from({length: 5}, (_, i) => (
-                  <option key={2022 + i} value={2022 + i}>
-                    {2022 + i}
-                  </option>
-                ))}
-              </select>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white rounded-lg shadow">
+          {/* Header */}
+          <div className="p-6 border-b">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-bold">👥 Complete Staff Management</h1>
+                <p className="text-gray-600">Manage staff profiles, attendance, and payroll</p>
+              </div>
+              
+              <div className="flex gap-2">
+                <select
+                  value={currentMonth}
+                  onChange={(e) => setCurrentMonth(Number(e.target.value))}
+                  className="border rounded px-3 py-2"
+                >
+                  {Array.from({length: 12}, (_, i) => (
+                    <option key={i+1} value={i+1}>
+                      {new Date(2024, i).toLocaleString('default', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
+                
+                <select
+                  value={currentYear}
+                  onChange={(e) => setCurrentYear(Number(e.target.value))}
+                  className="border rounded px-3 py-2"
+                >
+                  {Array.from({length: 5}, (_, i) => (
+                    <option key={2022+i} value={2022+i}>{2022+i}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Navigation Tabs */}
-        <div className="border-b">
-          <nav className="flex space-x-8 px-6">
-            {tabs.map(tab => (
+          {/* Action Buttons */}
+          <div className="p-6 border-b bg-gray-50">
+            <div className="flex gap-3">
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-2 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                onClick={() => setShowStaffModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+                disabled={loading}
               >
-                {tab.label}
+                ➕ Add Staff
               </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {staff.map(member => {
-                const attendanceStatus = getAttendanceStatus(member.id);
-                const monthlyStats = getMonthlyStats(member.id);
-
-                return (
-                  <div key={member.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h3 className="font-bold text-lg">{member.full_name || member.user?.email}</h3>
-                        <p className="text-sm text-gray-600 capitalize">{member.department || member.user?.role}</p>
-                        <p className="text-xs text-gray-500">ID: {member.employee_id || member.id}</p>
-                      </div>
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        attendanceStatus === 'present' ? 'bg-green-100 text-green-800' :
-                        attendanceStatus === 'absent' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {attendanceStatus === 'not_marked' 
-                          ? (language === 'hi' ? 'अंकित नहीं' : 'Not Marked')
-                          : attendanceStatus === 'present'
-                          ? (language === 'hi' ? 'उपस्थित' : 'Present')
-                          : (language === 'hi' ? 'अनुपस्थित' : 'Absent')
-                        }
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>{language === 'hi' ? 'विभाग:' : 'Department:'}</span>
-                        <span className="font-medium capitalize">{member.department || member.user?.role}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>{language === 'hi' ? 'पद:' : 'Position:'}</span>
-                        <span className="font-medium">{member.position || 'Staff'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>{language === 'hi' ? 'उपस्थित दिन:' : 'Days Present:'}</span>
-                        <span className="font-medium">{monthlyStats.present}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>{language === 'hi' ? 'कुल घंटे:' : 'Total Hours:'}</span>
-                        <span className="font-medium">{monthlyStats.totalHours.toFixed(1)}h</span>
-                      </div>
-                    </div>
-
-                    {/* Quick Actions */}
-                    <div className="mt-4 space-y-2">
-                      {attendanceStatus === 'not_marked' && (
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => markAttendance(member.id, 'present')}
-                            disabled={loading}
-                            className="flex-1 bg-green-500 text-white py-1 px-2 rounded text-xs hover:bg-green-600 disabled:opacity-50"
-                          >
-                            ✓ {language === 'hi' ? 'उपस्थित' : 'Present'}
-                          </button>
-                          <button
-                            onClick={() => markAttendance(member.id, 'absent')}
-                            disabled={loading}
-                            className="flex-1 bg-red-500 text-white py-1 px-2 rounded text-xs hover:bg-red-600 disabled:opacity-50"
-                          >
-                            ✗ {language === 'hi' ? 'अनुपस्थित' : 'Absent'}
-                          </button>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => setSelectedStaff(member)}
-                        className="w-full bg-blue-500 text-white py-1 px-2 rounded text-xs hover:bg-blue-600"
-                      >
-                        📊 {language === 'hi' ? 'विवरण देखें' : 'View Details'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              
+              <button
+                onClick={() => setShowAttendanceModal(true)}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+                disabled={loading}
+              >
+                📝 Mark Attendance
+              </button>
+              
+              <button
+                onClick={() => fetchAllData()}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+                disabled={loading}
+              >
+                🔄 Refresh
+              </button>
             </div>
           </div>
-        )}
 
-        {/* Attendance Tab */}
-        {activeTab === 'attendance' && (
+          {/* Staff List */}
           <div className="p-6">
-            <div className="overflow-x-auto">
-              <table className="min-w-full table-auto">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-4 py-2 text-left font-medium text-gray-900">
-                      {language === 'hi' ? 'कर्मचारी' : 'Staff'}
-                    </th>
-                    <th className="px-4 py-2 text-left font-medium text-gray-900">
-                      {language === 'hi' ? 'आज की स्थिति' : 'Today Status'}
-                    </th>
-                    <th className="px-4 py-2 text-left font-medium text-gray-900">
-                      {language === 'hi' ? 'इस महीने' : 'This Month'}
-                    </th>
-                    <th className="px-4 py-2 text-left font-medium text-gray-900">
-                      {language === 'hi' ? 'कुल घंटे' : 'Total Hours'}
-                    </th>
-                    <th className="px-4 py-2 text-left font-medium text-gray-900">
-                      {language === 'hi' ? 'कार्य' : 'Actions'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {staff.map(member => {
-                    const attendanceStatus = getAttendanceStatus(member.id);
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {staff.length > 0 ? (
+                  staff.map(member => {
                     const monthlyStats = getMonthlyStats(member.id);
-
+                    
                     return (
-                      <tr key={member.id} className="border-t">
-                        <td className="px-4 py-3">
-                          <div>
-                            <div className="font-medium">{member.full_name || member.user?.email}</div>
-                            <div className="text-sm text-gray-500">{member.employee_id || `ID: ${member.id}`}</div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            attendanceStatus === 'present' ? 'bg-green-100 text-green-800' :
-                            attendanceStatus === 'absent' ? 'bg-red-100 text-red-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {attendanceStatus === 'not_marked' 
-                              ? (language === 'hi' ? 'अंकित नहीं' : 'Not Marked')
-                              : attendanceStatus === 'present'
-                              ? (language === 'hi' ? 'उपस्थित' : 'Present')
-                              : (language === 'hi' ? 'अनुपस्थित' : 'Absent')
-                            }
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="text-sm">
-                            <div>{language === 'hi' ? 'उपस्थित' : 'Present'}: {monthlyStats.present}</div>
-                            <div>{language === 'hi' ? 'अनुपस्थित' : 'Absent'}: {monthlyStats.absent}</div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-medium">
-                          {monthlyStats.totalHours.toFixed(1)}h
-                        </td>
-                        <td className="px-4 py-3">
-                          {attendanceStatus === 'not_marked' && (
-                            <div className="flex space-x-1">
-                              <button
-                                onClick={() => markAttendance(member.id, 'present')}
-                                disabled={loading}
-                                className="bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600 disabled:opacity-50"
-                              >
-                                {language === 'hi' ? 'उपस्थित' : 'Present'}
-                              </button>
-                              <button
-                                onClick={() => markAttendance(member.id, 'absent')}
-                                disabled={loading}
-                                className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 disabled:opacity-50"
-                              >
-                                {language === 'hi' ? 'अनुपस्थित' : 'Absent'}
-                              </button>
+                      <div key={member.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-semibold">{member.full_name}</h3>
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                {member.employee_id}
+                              </span>
+                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                member.employment_status === 'active' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {member.employment_status}
+                              </span>
                             </div>
-                          )}
-                        </td>
-                      </tr>
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-500">Department:</span>
+                                <p className="font-medium">{member.department}</p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Position:</span>
+                                <p className="font-medium">{member.position}</p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Present Days:</span>
+                                <p className="font-medium text-green-600">{monthlyStats.present}</p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Total Hours:</span>
+                                <p className="font-medium">{monthlyStats.totalHours.toFixed(1)}h</p>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2 ml-4">
+                            <button
+                              onClick={() => generatePayroll(member.id)}
+                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+                              disabled={loading}
+                            >
+                              💰 Payroll
+                            </button>
+                            
+                            <button
+                              onClick={() => deleteStaff(member.id)}
+                              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
+                              disabled={loading}
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Payroll Tab */}
-        {activeTab === 'payroll' && (
-          <div className="p-6">
-            <div className="space-y-4">
-              {staff.map(member => {
-                const monthlyStats = getMonthlyStats(member.id);
-                const baseSalary = parseFloat(member.base_salary || 0);
-                const overtimeAmount = monthlyStats.overtimeHours * parseFloat(member.hourly_rate || 0) * 1.5;
-                const grossSalary = baseSalary + overtimeAmount;
-
-                return (
-                  <div key={member.id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-bold text-lg">{member.full_name || member.user?.email}</h3>
-                        <p className="text-sm text-gray-600">{member.employee_id || `ID: ${member.id}`} - {member.position || member.user?.role}</p>
-                      </div>
-                      <button className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                        {language === 'hi' ? 'वेतन जनरेट करें' : 'Generate Payroll'}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                      <div className="bg-gray-50 rounded p-3">
-                        <div className="text-sm text-gray-600">{language === 'hi' ? 'मूल वेतन' : 'Base Salary'}</div>
-                        <div className="font-bold text-lg">₹{baseSalary.toFixed(2)}</div>
-                      </div>
-                      <div className="bg-orange-50 rounded p-3">
-                        <div className="text-sm text-gray-600">{language === 'hi' ? 'ओवरटाइम' : 'Overtime'}</div>
-                        <div className="font-bold text-lg text-orange-600">₹{overtimeAmount.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">{monthlyStats.overtimeHours.toFixed(1)}h</div>
-                      </div>
-                      <div className="bg-green-50 rounded p-3">
-                        <div className="text-sm text-gray-600">{language === 'hi' ? 'कुल वेतन' : 'Gross Salary'}</div>
-                        <div className="font-bold text-lg text-green-600">₹{grossSalary.toFixed(2)}</div>
-                      </div>
-                      <div className="bg-blue-50 rounded p-3">
-                        <div className="text-sm text-gray-600">{language === 'hi' ? 'उपस्थित दिन' : 'Days Present'}</div>
-                        <div className="font-bold text-lg text-blue-600">{monthlyStats.present}</div>
-                      </div>
-                    </div>
+                  })
+                ) : (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500">No staff members found. Add your first staff member.</p>
                   </div>
-                );
-              })}
-            </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Staff Detail Modal */}
-      {selectedStaff && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">
-                {selectedStaff.full_name || selectedStaff.user?.email} - {language === 'hi' ? 'विवरण' : 'Details'}
-              </h2>
-              <button
-                onClick={() => setSelectedStaff(null)}
-                className="text-gray-500 hover:text-gray-700 text-xl"
+      {/* Add Staff Modal */}
+      {showStaffModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Add New Staff</h2>
+            
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Full Name *"
+                value={staffForm.full_name}
+                onChange={(e) => setStaffForm({...staffForm, full_name: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                value={staffForm.phone}
+                onChange={(e) => setStaffForm({...staffForm, phone: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <select
+                value={staffForm.department}
+                onChange={(e) => setStaffForm({...staffForm, department: e.target.value})}
+                className="w-full border rounded px-3 py-2"
               >
-                ✕
+                <option value="kitchen">Kitchen</option>
+                <option value="service">Service</option>
+                <option value="housekeeping">Housekeeping</option>
+                <option value="management">Management</option>
+                <option value="billing">Billing</option>
+              </select>
+              
+              <input
+                type="text"
+                placeholder="Position"
+                value={staffForm.position}
+                onChange={(e) => setStaffForm({...staffForm, position: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <input
+                type="number"
+                placeholder="Base Salary"
+                value={staffForm.base_salary}
+                onChange={(e) => setStaffForm({...staffForm, base_salary: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <input
+                type="number"
+                placeholder="Hourly Rate"
+                value={staffForm.hourly_rate}
+                onChange={(e) => setStaffForm({...staffForm, hourly_rate: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              
+              <select
+                value={staffForm.user_role}
+                onChange={(e) => setStaffForm({...staffForm, user_role: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              >
+                <option value="staff">Staff</option>
+                <option value="waiter">Waiter</option>
+                <option value="biller">Biller</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={createStaffProfile}
+                disabled={loading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg disabled:opacity-50"
+              >
+                {loading ? 'Creating...' : 'Create Staff'}
+              </button>
+              
+              <button
+                onClick={() => setShowStaffModal(false)}
+                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 py-2 rounded-lg"
+              >
+                Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
+      {/* Mark Attendance Modal */}
+      {showAttendanceModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Mark Attendance</h2>
+            
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {language === 'hi' ? 'पूरा नाम' : 'Full Name'}
-                  </label>
-                  <div className="mt-1 text-sm">{selectedStaff.full_name || selectedStaff.user?.email}</div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {language === 'hi' ? 'विभाग' : 'Department'}
-                  </label>
-                  <div className="mt-1 text-sm capitalize">{selectedStaff.department || selectedStaff.user?.role}</div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {language === 'hi' ? 'पद' : 'Position'}
-                  </label>
-                  <div className="mt-1 text-sm">{selectedStaff.position || 'Staff'}</div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {language === 'hi' ? 'स्थिति' : 'Status'}
-                  </label>
-                  <div className="mt-1 text-sm">
-                    {selectedStaff.employment_status || selectedStaff.user?.is_active 
-                      ? (language === 'hi' ? 'सक्रिय' : 'Active')
-                      : (language === 'hi' ? 'निष्क्रिय' : 'Inactive')
-                    }
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {language === 'hi' ? 'फोन' : 'Phone'}
-                  </label>
-                  <div className="mt-1 text-sm">{selectedStaff.phone || 'N/A'}</div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {language === 'hi' ? 'कर्मचारी ID' : 'Employee ID'}
-                  </label>
-                  <div className="mt-1 text-sm">{selectedStaff.employee_id || selectedStaff.id}</div>
-                </div>
-              </div>
-
-              {/* Monthly Performance placeholder */}
-              <div className="bg-gray-50 rounded p-4">
-                <h3 className="font-medium mb-2">
-                  {language === 'hi' ? 'मासिक प्रदर्शन' : 'Monthly Performance'}
-                </h3>
-                <div className="text-sm text-gray-600">
-                  {language === 'hi' 
-                    ? 'उपस्थिति चार्ट और प्रदर्शन मेट्रिक्स यहाँ प्रदर्शित होंगे'
-                    : 'Attendance chart and performance metrics would be displayed here'
-                  }
-                </div>
-              </div>
+              <select
+                value={attendanceForm.staff_id}
+                onChange={(e) => setAttendanceForm({...attendanceForm, staff_id: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              >
+                <option value="">Select Staff Member</option>
+                {staff.map(member => (
+                  <option key={member.id} value={member.id}>
+                    {member.full_name} ({member.employee_id})
+                  </option>
+                ))}
+              </select>
+              
+              <input
+                type="date"
+                value={attendanceForm.date}
+                onChange={(e) => setAttendanceForm({...attendanceForm, date: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <select
+                value={attendanceForm.status}
+                onChange={(e) => setAttendanceForm({...attendanceForm, status: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              >
+                <option value="present">Present</option>
+                <option value="absent">Absent</option>
+                <option value="half_day">Half Day</option>
+                <option value="late">Late</option>
+                <option value="on_leave">On Leave</option>
+              </select>
+              
+              <input
+                type="time"
+                placeholder="Check In Time"
+                value={attendanceForm.check_in_time}
+                onChange={(e) => setAttendanceForm({...attendanceForm, check_in_time: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <input
+                type="time"
+                placeholder="Check Out Time"
+                value={attendanceForm.check_out_time}
+                onChange={(e) => setAttendanceForm({...attendanceForm, check_out_time: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+              />
+              
+              <textarea
+                placeholder="Notes (optional)"
+                value={attendanceForm.notes}
+                onChange={(e) => setAttendanceForm({...attendanceForm, notes: e.target.value})}
+                className="w-full border rounded px-3 py-2"
+                rows="3"
+              />
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={markAttendance}
+                disabled={loading}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg disabled:opacity-50"
+              >
+                {loading ? 'Marking...' : 'Mark Attendance'}
+              </button>
+              
+              <button
+                onClick={() => setShowAttendanceModal(false)}
+                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
@@ -472,5 +591,4 @@ function StaffManagement() {
   );
 }
 
-export default withRoleGuard(StaffManagement, ['admin']);
-
+export default withRoleGuard(CompleteStaffManagement, ['admin', 'staff']);
