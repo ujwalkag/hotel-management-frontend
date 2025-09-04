@@ -1,0 +1,13 @@
+{
+  "name": "Hotel Restaurant Management",
+  "short_name": "HotelPOS", 
+  "description": "Restaurant Order & Billing System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3B82F6",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "categories": ["business", "productivity"],
+  "lang": "en"
+}
