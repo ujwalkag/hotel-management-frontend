@@ -4,35 +4,19 @@ import { useLanguage } from '@/context/LanguageContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
 import toast from 'react-hot-toast';
 
-function CompleteStaffManagement() {
+function StaffPayrollManagement() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const [staff, setStaff] = useState([]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
-  const [selectedStaff, setSelectedStaff] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
-
-  // Modals
-  const [showStaffModal, setShowStaffModal] = useState(false);
-  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showPayrollModal, setShowPayrollModal] = useState(false);
+  const [payrollData, setPayrollData] = useState(null);
 
-  // Forms
-  const [staffForm, setStaffForm] = useState({
-    full_name: '',
-    phone: '',
-    department: 'service',
-    position: '',
-    base_salary: '',
-    hourly_rate: '',
-    user_email: '',
-    user_password: '',
-    user_role: 'staff'
-  });
-
+  // Modals - NO STAFF CREATION MODAL, ONLY ATTENDANCE
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [attendanceForm, setAttendanceForm] = useState({
     staff_id: '',
     date: new Date().toISOString().split('T')[0],
@@ -86,75 +70,6 @@ function CompleteStaffManagement() {
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
-    }
-  };
-
-  const createStaffProfile = async () => {
-    if (!staffForm.full_name || !staffForm.user_email) {
-      toast.error('Name and email are required');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      // First create user account
-      const userResponse = await fetch('/api/users/staff/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user.access}`
-        },
-        body: JSON.stringify({
-          email: staffForm.user_email,
-          password: staffForm.user_password || 'default123',
-          role: staffForm.user_role
-        })
-      });
-
-      if (!userResponse.ok) {
-        const error = await userResponse.json();
-        toast.error('Failed to create user: ' + (error.error || 'Unknown error'));
-        return;
-      }
-
-      const userData = await userResponse.json();
-
-      // Then create staff profile
-      const profileResponse = await fetch('/api/staff/profiles/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user.access}`
-        },
-        body: JSON.stringify({
-          user: userData.user.id,
-          full_name: staffForm.full_name,
-          phone: staffForm.phone,
-          department: staffForm.department,
-          position: staffForm.position,
-          base_salary: parseFloat(staffForm.base_salary) || 0,
-          hourly_rate: parseFloat(staffForm.hourly_rate) || 0
-        })
-      });
-
-      if (profileResponse.ok) {
-        toast.success('Staff profile created successfully');
-        setShowStaffModal(false);
-        setStaffForm({
-          full_name: '', phone: '', department: 'service', position: '',
-          base_salary: '', hourly_rate: '', user_email: '', user_password: '', user_role: 'staff'
-        });
-        fetchStaff();
-      } else {
-        const error = await profileResponse.json();
-        toast.error('Failed to create profile: ' + (error.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error creating staff:', error);
-      toast.error('Network error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -213,40 +128,15 @@ function CompleteStaffManagement() {
 
       if (response.ok) {
         const data = await response.json();
+        setPayrollData(data.payroll);
+        setShowPayrollModal(true);
         toast.success(`Payroll generated for ${data.payroll.staff_name}`);
-        console.log('Payroll data:', data.payroll);
-        // You can display the payroll data in a modal or download it
       } else {
         const error = await response.json();
         toast.error('Failed to generate payroll: ' + (error.error || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error generating payroll:', error);
-      toast.error('Network error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteStaff = async (staffId) => {
-    if (!confirm('Are you sure you want to delete this staff member?')) return;
-
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/staff/profiles/${staffId}/`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${user.access}` }
-      });
-
-      if (response.ok) {
-        toast.success('Staff member deleted successfully');
-        fetchStaff();
-      } else {
-        const error = await response.json();
-        toast.error('Failed to delete staff: ' + (error.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error deleting staff:', error);
       toast.error('Network error');
     } finally {
       setLoading(false);
@@ -271,8 +161,8 @@ function CompleteStaffManagement() {
           <div className="p-6 border-b">
             <div className="flex justify-between items-center">
               <div>
-                <h1 className="text-2xl font-bold">👥 Complete Staff Management</h1>
-                <p className="text-gray-600">Manage staff profiles, attendance, and payroll</p>
+                <h1 className="text-2xl font-bold">💰 Staff Payroll & Attendance</h1>
+                <p className="text-gray-600">Track attendance and generate payroll (Staff creation in Role Management)</p>
               </div>
               
               <div className="flex gap-2">
@@ -301,17 +191,9 @@ function CompleteStaffManagement() {
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons - ONLY ATTENDANCE, NO STAFF CREATION */}
           <div className="p-6 border-b bg-gray-50">
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowStaffModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
-                disabled={loading}
-              >
-                ➕ Add Staff
-              </button>
-              
               <button
                 onClick={() => setShowAttendanceModal(true)}
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
@@ -360,22 +242,30 @@ function CompleteStaffManagement() {
                               </span>
                             </div>
                             
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
                               <div>
                                 <span className="text-gray-500">Department:</span>
                                 <p className="font-medium">{member.department}</p>
                               </div>
                               <div>
-                                <span className="text-gray-500">Position:</span>
-                                <p className="font-medium">{member.position}</p>
+                                <span className="text-gray-500">Base Salary:</span>
+                                <p className="font-medium">₹{member.base_salary}</p>
                               </div>
                               <div>
                                 <span className="text-gray-500">Present Days:</span>
                                 <p className="font-medium text-green-600">{monthlyStats.present}</p>
                               </div>
                               <div>
+                                <span className="text-gray-500">Absent Days:</span>
+                                <p className="font-medium text-red-600">{monthlyStats.absent}</p>
+                              </div>
+                              <div>
                                 <span className="text-gray-500">Total Hours:</span>
                                 <p className="font-medium">{monthlyStats.totalHours.toFixed(1)}h</p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Overtime:</span>
+                                <p className="font-medium text-orange-600">{monthlyStats.overtimeHours.toFixed(1)}h</p>
                               </div>
                             </div>
                           </div>
@@ -383,18 +273,10 @@ function CompleteStaffManagement() {
                           <div className="flex gap-2 ml-4">
                             <button
                               onClick={() => generatePayroll(member.id)}
-                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+                              className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm"
                               disabled={loading}
                             >
-                              💰 Payroll
-                            </button>
-                            
-                            <button
-                              onClick={() => deleteStaff(member.id)}
-                              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
-                              disabled={loading}
-                            >
-                              🗑️ Delete
+                              💰 Generate Payroll
                             </button>
                           </div>
                         </div>
@@ -403,7 +285,7 @@ function CompleteStaffManagement() {
                   })
                 ) : (
                   <div className="text-center py-12">
-                    <p className="text-gray-500">No staff members found. Add your first staff member.</p>
+                    <p className="text-gray-500">No staff members found. Create staff in Role Management first.</p>
                   </div>
                 )}
               </div>
@@ -412,103 +294,11 @@ function CompleteStaffManagement() {
         </div>
       </div>
 
-      {/* Add Staff Modal */}
-      {showStaffModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">Add New Staff</h2>
-            
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Full Name *"
-                value={staffForm.full_name}
-                onChange={(e) => setStaffForm({...staffForm, full_name: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              
-              <input
-                type="tel"
-                placeholder="Phone Number"
-                value={staffForm.phone}
-                onChange={(e) => setStaffForm({...staffForm, phone: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              
-              <select
-                value={staffForm.department}
-                onChange={(e) => setStaffForm({...staffForm, department: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              >
-                <option value="kitchen">Kitchen</option>
-                <option value="service">Service</option>
-                <option value="housekeeping">Housekeeping</option>
-                <option value="management">Management</option>
-                <option value="billing">Billing</option>
-              </select>
-              
-              <input
-                type="text"
-                placeholder="Position"
-                value={staffForm.position}
-                onChange={(e) => setStaffForm({...staffForm, position: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              
-              <input
-                type="number"
-                placeholder="Base Salary"
-                value={staffForm.base_salary}
-                onChange={(e) => setStaffForm({...staffForm, base_salary: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              
-              <input
-                type="number"
-                placeholder="Hourly Rate"
-                value={staffForm.hourly_rate}
-                onChange={(e) => setStaffForm({...staffForm, hourly_rate: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              
-              
-              <select
-                value={staffForm.user_role}
-                onChange={(e) => setStaffForm({...staffForm, user_role: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              >
-                <option value="staff">Staff</option>
-                <option value="waiter">Waiter</option>
-                <option value="biller">Biller</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={createStaffProfile}
-                disabled={loading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg disabled:opacity-50"
-              >
-                {loading ? 'Creating...' : 'Create Staff'}
-              </button>
-              
-              <button
-                onClick={() => setShowStaffModal(false)}
-                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 py-2 rounded-lg"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Mark Attendance Modal */}
       {showAttendanceModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Mark Attendance</h2>
+            <h2 className="text-xl font-bold mb-4">📝 Mark Attendance</h2>
             
             <div className="space-y-4">
               <select
@@ -587,8 +377,73 @@ function CompleteStaffManagement() {
           </div>
         </div>
       )}
+
+      {/* Payroll Display Modal */}
+      {showPayrollModal && payrollData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">💰 Payroll Summary</h2>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span>Staff:</span>
+                <span className="font-medium">{payrollData.staff_name}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span>Month/Year:</span>
+                <span className="font-medium">{payrollData.month}/{payrollData.year}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span>Present Days:</span>
+                <span className="font-medium text-green-600">{payrollData.total_days_present}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span>Total Hours:</span>
+                <span className="font-medium">{payrollData.total_hours}h</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span>Overtime Hours:</span>
+                <span className="font-medium text-orange-600">{payrollData.overtime_hours}h</span>
+              </div>
+              
+              <hr className="my-4" />
+              
+              <div className="flex justify-between">
+                <span>Base Salary:</span>
+                <span className="font-medium">₹{payrollData.base_salary}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span>Overtime Amount:</span>
+                <span className="font-medium">₹{payrollData.overtime_amount}</span>
+              </div>
+              
+              <hr className="my-4" />
+              
+              <div className="flex justify-between text-lg font-bold">
+                <span>Gross Salary:</span>
+                <span className="text-green-600">₹{payrollData.gross_salary}</span>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowPayrollModal(false)}
+                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 py-2 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export default withRoleGuard(CompleteStaffManagement, ['admin', 'staff']);
+export default withRoleGuard(StaffPayrollManagement, ['admin', 'staff']);
+
