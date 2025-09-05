@@ -1,27 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
+import toast from 'react-hot-toast';
 
-function KitchenDisplay() {
+function EnhancedKitchenDisplay() {
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(() => 
+    localStorage.getItem('kitchen-audio-enabled') === 'true'
+  );
+  const [lastOrderCount, setLastOrderCount] = useState(0);
+  const audioContextRef = useRef(null);
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 20000); // 20 second refresh
+    const interval = setInterval(fetchOrders, 10000); // Check every 10 seconds
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    // Save audio preference
+    localStorage.setItem('kitchen-audio-enabled', audioEnabled.toString());
+  }, [audioEnabled]);
+
+  useEffect(() => {
+    // Play sound when new orders arrive
+    if (audioEnabled && orders.length > lastOrderCount && lastOrderCount > 0) {
+      playNewOrderSound();
+    }
+    setLastOrderCount(orders.length);
+  }, [orders.length, audioEnabled, lastOrderCount]);
 
   const fetchOrders = async () => {
     if (!user?.access) return;
     
     try {
       setError('');
-      const response = await fetch('/api/tables/kitchen/', {
+      const response = await fetch('/api/kitchen/orders/', {
         headers: { 
           Authorization: `Bearer ${user.access}`,
           'Content-Type': 'application/json'
@@ -30,22 +48,15 @@ function KitchenDisplay() {
       
       if (response.ok) {
         const data = await response.json();
-        console.log('Kitchen API Response:', data); // Debug log
-        
         const ordersArray = Array.isArray(data) ? data : [];
         setOrders(ordersArray);
         setLastUpdated(new Date());
-        
-        // Audio notification for new orders
-        if (audioEnabled && ordersArray.length > 0) {
-          playNotificationSound();
-        }
       } else {
-        setError(`Failed to load orders / ऑर्डर लोड करने में विफल: ${response.status} ${response.statusText}`);
+        setError(`Failed to load orders: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('Kitchen fetch error:', error);
-      setError('Network error loading orders / ऑर्डर लोड करने में नेटवर्क त्रुटि');
+      setError('Network error loading orders');
     } finally {
       setLoading(false);
     }
@@ -53,7 +64,7 @@ function KitchenDisplay() {
 
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      const response = await fetch(`/api/tables/kitchen/${orderId}/update_status/`, {
+      const response = await fetch(`/api/kitchen/orders/${orderId}/update-status/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,36 +75,124 @@ function KitchenDisplay() {
 
       if (response.ok) {
         fetchOrders(); // Refresh orders
+        playStatusUpdateSound();
       } else {
-        setError('Failed to update order status / ऑर्डर स्थिति अपडेट करने में विफल');
+        setError('Failed to update order status');
       }
     } catch (error) {
       console.error('Status update error:', error);
-      setError('Network error updating status / स्थिति अपडेट करने में नेटवर्क त्रुटि');
+      setError('Network error updating status');
     }
   };
 
-  const playNotificationSound = () => {
-    // Simple beep sound (you can replace with actual audio file)
+  const initAudioContext = () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioContextRef.current;
+  };
+
+  const playNewOrderSound = () => {
+    if (!audioEnabled) return;
+    
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioContext = initAudioContext();
+      
+      // Play a distinctive new order sound sequence
+      const frequencies = [800, 1000, 1200];
+      frequencies.forEach((freq, index) => {
+        setTimeout(() => {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.frequency.value = freq;
+          oscillator.type = 'sine';
+          
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.5);
+        }, index * 200);
+      });
+      
+      // Also speak the notification
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance('New order received');
+        utterance.rate = 1.2;
+        utterance.pitch = 1.1;
+        speechSynthesis.speak(utterance);
+      }
+    } catch (error) {
+      console.log('Audio not supported or failed');
+    }
+  };
+
+  const playStatusUpdateSound = () => {
+    if (!audioEnabled) return;
+    
+    try {
+      const audioContext = initAudioContext();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
       
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
       
-      oscillator.frequency.value = 800;
-      oscillator.type = 'square';
+      oscillator.frequency.value = 1200;
+      oscillator.type = 'sine';
       
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
       
       oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.5);
+      oscillator.stop(audioContext.currentTime + 0.3);
     } catch (error) {
       console.log('Audio not supported');
     }
+  };
+
+  const playUrgentAlert = (orderAge) => {
+    if (!audioEnabled || orderAge < 25) return;
+    
+    try {
+      const audioContext = initAudioContext();
+      
+      // Urgent beeping pattern
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.frequency.value = 1500;
+          oscillator.type = 'square';
+          
+          gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.2);
+        }, i * 300);
+      }
+    } catch (error) {
+      console.log('Audio not supported');
+    }
+  };
+
+  const testAudio = () => {
+    if (!audioEnabled) {
+      toast.error('Enable audio first');
+      return;
+    }
+    
+    playNewOrderSound();
+    toast.success('Audio test played');
   };
 
   const getStatusColor = (status) => {
@@ -107,10 +206,10 @@ function KitchenDisplay() {
 
   const getStatusText = (status) => {
     switch (status) {
-      case 'pending': return 'Pending / लंबित';
-      case 'preparing': return 'Preparing / तैयार हो रहा';
-      case 'ready': return 'Ready / तैयार';
-      case 'served': return 'Served / परोसा गया';
+      case 'pending': return 'Pending';
+      case 'preparing': return 'Preparing';
+      case 'ready': return 'Ready';
+      case 'served': return 'Served';
       default: return status;
     }
   };
@@ -124,51 +223,69 @@ function KitchenDisplay() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-xl font-semibold text-gray-700">Loading Kitchen Orders... / किचन ऑर्डर लोड हो रहे हैं...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading Kitchen Orders...</p>
         </div>
       </div>
     );
   }
 
   // Filter orders by status
-  const pendingOrders = orders.filter(order => order.order_item?.status === 'pending');
-  const preparingOrders = orders.filter(order => order.order_item?.status === 'preparing');
-  const readyOrders = orders.filter(order => order.order_item?.status === 'ready');
+  const pendingOrders = orders.filter(order => order.status === 'pending');
+  const preparingOrders = orders.filter(order => order.status === 'preparing');
+  const readyOrders = orders.filter(order => order.status === 'ready');
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-white shadow-lg border-b-4 border-blue-600">
-        <div className="max-w-7xl mx-auto p-4">
+      <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+        <div className="px-6 py-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">ߍ Kitchen Display / किचन डिस्प्ले</h1>
-              <p className="text-gray-600">
-                {orders.length} total orders / कुल ऑर्डर • Last updated / अंतिम अपडेट: {lastUpdated.toLocaleTimeString()}
+              <h1 className="text-2xl font-bold text-white">🍽️ Enhanced Kitchen Display</h1>
+              <p className="text-gray-300">
+                {orders.length} total orders • Last updated: {lastUpdated.toLocaleTimeString()}
               </p>
             </div>
             
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`px-4 py-2 rounded ${audioEnabled ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700'}`}
-              >
-                ߔ Audio {audioEnabled ? 'ON / चालू' : 'OFF / बंद'}
-              </button>
+            <div className="flex items-center gap-4">
+              {/* Audio Controls */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAudioEnabled(!audioEnabled)}
+                  className={`px-3 py-2 rounded text-sm font-medium ${
+                    audioEnabled 
+                      ? 'bg-green-600 hover:bg-green-700 text-white' 
+                      : 'bg-gray-600 hover:bg-gray-700 text-gray-300'
+                  }`}
+                >
+                  {audioEnabled ? '🔊 Audio ON' : '🔇 Audio OFF'}
+                </button>
+                
+                {audioEnabled && (
+                  <button
+                    onClick={testAudio}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                  >
+                    🎵 Test Sound
+                  </button>
+                )}
+              </div>
+
               <button
                 onClick={fetchOrders}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                disabled={loading}
               >
-                ߔ Refresh / रिफ्रेश
+                🔄 Refresh
               </button>
             </div>
           </div>
           
           {error && (
-            <div className="mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="mt-2 p-3 bg-red-600 text-white rounded">
               {error}
             </div>
           )}
@@ -176,95 +293,138 @@ function KitchenDisplay() {
       </div>
 
       {/* Status Summary */}
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-red-100 p-4 rounded-lg text-center">
-            <h3 className="text-2xl font-bold text-red-800">{pendingOrders.length}</h3>
-            <p className="text-red-600">Pending Orders / लंबित ऑर्डर</p>
+      <div className="px-6 py-4 bg-gray-800">
+        <div className="grid grid-cols-3 gap-6">
+          <div className="text-center">
+            <div className="text-3xl font-bold text-red-400">{pendingOrders.length}</div>
+            <div className="text-sm text-gray-300">Pending Orders</div>
           </div>
-          <div className="bg-yellow-100 p-4 rounded-lg text-center">
-            <h3 className="text-2xl font-bold text-yellow-800">{preparingOrders.length}</h3>
-            <p className="text-yellow-600">Preparing / तैयार हो रहे</p>
+          
+          <div className="text-center">
+            <div className="text-3xl font-bold text-yellow-400">{preparingOrders.length}</div>
+            <div className="text-sm text-gray-300">Preparing</div>
           </div>
-          <div className="bg-green-100 p-4 rounded-lg text-center">
-            <h3 className="text-2xl font-bold text-green-800">{readyOrders.length}</h3>
-            <p className="text-green-600">Ready to Serve / परोसने के लिए तैयार</p>
+          
+          <div className="text-center">
+            <div className="text-3xl font-bold text-green-400">{readyOrders.length}</div>
+            <div className="text-sm text-gray-300">Ready to Serve</div>
           </div>
         </div>
+      </div>
 
-        {/* Orders Display */}
+      {/* Orders Display */}
+      <div className="p-6">
         {orders.length === 0 ? (
-          <div className="bg-white rounded-lg p-12 text-center">
-            <div className="text-6xl mb-4">ߎ</div>
-            <h2 className="text-2xl font-bold text-gray-700 mb-2">All Orders Complete! / सभी ऑर्डर पूरे!</h2>
-            <p className="text-gray-500">No pending orders in the kitchen / किचन में कोई लंबित ऑर्डर नहीं</p>
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">🎉</div>
+            <h2 className="text-2xl font-bold text-gray-300 mb-2">All Orders Complete!</h2>
+            <p className="text-gray-400">No pending orders in the kitchen</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {orders.map((order) => {
-              const orderAge = getOrderAge(order.display_time || order.order_item?.order_time);
+              const orderAge = getOrderAge(order.created_at);
               const isUrgent = orderAge > 20;
+              const isVeryUrgent = orderAge > 30;
+              
+              // Play urgent alert for very urgent orders
+              if (isVeryUrgent && audioEnabled) {
+                playUrgentAlert(orderAge);
+              }
               
               return (
-                <div
-                  key={order.id}
-                  className={`bg-white border-2 rounded-lg p-4 shadow-md ${getStatusColor(order.order_item?.status)} ${isUrgent ? 'animate-pulse border-red-600' : ''}`}
+                <div 
+                  key={order.id} 
+                  className={`rounded-lg p-6 border-2 transition-all ${
+                    isVeryUrgent 
+                      ? 'bg-red-900 border-red-500 animate-pulse' 
+                      : isUrgent 
+                        ? 'bg-yellow-900 border-yellow-500' 
+                        : 'bg-gray-800 border-gray-600'
+                  }`}
                 >
-                  <div className="flex justify-between items-start mb-3">
+                  <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="text-lg font-bold">Table {order.table_number} / टेबल {order.table_number}</h3>
-                      <p className="text-sm text-gray-600">Order #{order.order_number} / ऑर्डर नं.</p>
-                    </div>
-                    {isUrgent && (
-                      <span className="bg-red-500 text-white px-2 py-1 rounded text-xs font-bold">
-                        URGENT / तत्काल
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mb-3">
-                    <p className="font-semibold">{order.order_item?.menu_item?.name_en}</p>
-                    {order.order_item?.menu_item?.name_hi && (
-                      <p className="text-sm text-gray-600">{order.order_item.menu_item.name_hi}</p>
-                    )}
-                    <p className="text-sm text-gray-600">Qty / मात्रा: {order.order_item?.quantity}</p>
-                    {order.order_item?.special_instructions && (
-                      <p className="text-sm italic text-blue-600">
-                        Note / नोट: {order.order_item.special_instructions}
+                      <h3 className="text-xl font-bold text-white">
+                        🪑 Table {order.table_number}
+                      </h3>
+                      <p className="text-sm text-gray-300">Order #{order.order_number}</p>
+                      <p className="text-sm text-gray-300">
+                        Customer: {order.customer_name || 'Guest'}
                       </p>
-                    )}
+                    </div>
+                    
+                    <div className="text-right">
+                      {isVeryUrgent && (
+                        <div className="bg-red-600 text-white px-2 py-1 rounded text-xs font-bold mb-2 animate-bounce">
+                          ⚠️ VERY URGENT
+                        </div>
+                      )}
+                      {isUrgent && !isVeryUrgent && (
+                        <div className="bg-yellow-600 text-white px-2 py-1 rounded text-xs font-bold mb-2">
+                          ⏰ URGENT
+                        </div>
+                      )}
+                      <div className="text-lg font-bold text-green-400">{orderAge} min</div>
+                    </div>
                   </div>
 
-                  <div className="mb-3 text-sm text-gray-600">
-                    <p>Customer / ग्राहक: {order.customer_name}</p>
-                    <p>Waiter / वेटर: {order.waiter_name}</p>
-                    <p>Age / समय: {orderAge} minutes / मिनट</p>
-                    <p>Status / स्थिति: {getStatusText(order.order_item?.status)}</p>
+                  {/* Order Items */}
+                  <div className="mb-4">
+                    {order.items?.map((item, index) => (
+                      <div key={index} className="mb-3 p-3 bg-gray-700 rounded">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-bold text-white text-lg">
+                              {item.menu_item?.name_en}
+                            </h4>
+                            {item.menu_item?.name_hi && (
+                              <p className="text-gray-300 text-sm">{item.menu_item.name_hi}</p>
+                            )}
+                            <p className="text-yellow-400 font-bold">Qty: {item.quantity}</p>
+                            {item.special_instructions && (
+                              <div className="mt-2 p-2 bg-blue-800 rounded">
+                                <p className="text-sm text-blue-200">
+                                  📝 Note: {item.special_instructions}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className={`px-3 py-1 rounded text-sm font-medium ${getStatusColor(item.status)}`}>
+                            {getStatusText(item.status)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
+                  {/* Action Buttons */}
                   <div className="flex gap-2">
-                    {order.order_item?.status === 'pending' && (
+                    {order.status === 'pending' && (
                       <button
                         onClick={() => updateOrderStatus(order.id, 'preparing')}
-                        className="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600"
+                        className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded font-medium"
                       >
-                        Start Cooking / खाना बनाना शुरू करें
+                        👨‍🍳 Start Preparing
                       </button>
                     )}
-                    {order.order_item?.status === 'preparing' && (
+                    
+                    {order.status === 'preparing' && (
                       <button
                         onClick={() => updateOrderStatus(order.id, 'ready')}
-                        className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600"
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded font-medium"
                       >
-                        Food Ready / खाना तैयार
+                        ✅ Mark Ready
                       </button>
                     )}
-                    {order.order_item?.status === 'ready' && (
+                    
+                    {order.status === 'ready' && (
                       <button
                         onClick={() => updateOrderStatus(order.id, 'served')}
-                        className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded font-medium"
                       >
-                        Mark Served / परोसा गया
+                        🍽️ Mark Served
                       </button>
                     )}
                   </div>
@@ -278,5 +438,5 @@ function KitchenDisplay() {
   );
 }
 
-export default withRoleGuard(KitchenDisplay, ['admin', 'staff']);
+export default withRoleGuard(EnhancedKitchenDisplay, ['admin', 'staff']);
 

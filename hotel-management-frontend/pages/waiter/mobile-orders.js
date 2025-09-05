@@ -5,7 +5,7 @@ import withRoleGuard from '@/hoc/withRoleGuard';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 
-function WorkingMobileOrders() {
+function EnhancedMobileOrders() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const router = useRouter();
@@ -14,6 +14,7 @@ function WorkingMobileOrders() {
   const [menuItems, setMenuItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [currentOrder, setCurrentOrder] = useState(null);
   const [cart, setCart] = useState([]);
   const [customerInfo, setCustomerInfo] = useState({
     name: 'Guest',
@@ -21,7 +22,7 @@ function WorkingMobileOrders() {
     count: 1
   });
   const [loading, setLoading] = useState(false);
-  const [view, setView] = useState('tables');
+  const [view, setView] = useState('tables'); // 'tables', 'menu', 'cart', 'existing'
 
   useEffect(() => {
     fetchInitialData();
@@ -33,44 +34,33 @@ function WorkingMobileOrders() {
     try {
       setLoading(true);
 
-      // Fetch tables
-      const tablesRes = await fetch('/api/tables/mobile/tables_layout/', {
-        headers: { Authorization: `Bearer ${user.access}` }
-      });
+      // Fetch all required data
+      const [tablesRes, menuRes, categoriesRes] = await Promise.all([
+        fetch('/api/tables/', {
+          headers: { Authorization: `Bearer ${user.access}` }
+        }),
+        fetch('/api/menu/items/', {
+          headers: { Authorization: `Bearer ${user.access}` }
+        }),
+        fetch('/api/menu/categories/', {
+          headers: { Authorization: `Bearer ${user.access}` }
+        })
+      ]);
 
       if (tablesRes.ok) {
         const tablesData = await tablesRes.json();
-        console.log('Tables loaded:', tablesData);
-        setTables(Array.isArray(tablesData) ? tablesData : []);
-      } else {
-        console.error('Failed to load tables:', tablesRes.status);
-        toast.error('Failed to load tables');
+        setTables(Array.isArray(tablesData) ? tablesData : tablesData.results || []);
       }
-
-      // Fetch menu items
-      const menuRes = await fetch('/api/menu/items/', {
-        headers: { Authorization: `Bearer ${user.access}` }
-      });
 
       if (menuRes.ok) {
         const menuData = await menuRes.json();
         const items = Array.isArray(menuData) ? menuData : menuData.results || [];
-        console.log('Menu loaded:', items.length, 'items');
         setMenuItems(items.filter(item => item.available !== false));
-      } else {
-        console.error('Failed to load menu');
-        toast.error('Failed to load menu');
       }
-
-      // Fetch categories
-      const categoriesRes = await fetch('/api/menu/categories/', {
-        headers: { Authorization: `Bearer ${user.access}` }
-      });
 
       if (categoriesRes.ok) {
         const categoryData = await categoriesRes.json();
         const cats = Array.isArray(categoryData) ? categoryData : categoryData.results || [];
-        console.log('Categories loaded:', cats);
         setCategories(cats);
       }
 
@@ -82,11 +72,48 @@ function WorkingMobileOrders() {
     }
   };
 
+  const fetchExistingOrder = async (tableId) => {
+    try {
+      const response = await fetch(`/api/tables/${tableId}/current-order/`, {
+        headers: { Authorization: `Bearer ${user.access}` }
+      });
+
+      if (response.ok) {
+        const orderData = await response.json();
+        setCurrentOrder(orderData);
+        setCart(orderData.items || []);
+        setCustomerInfo({
+          name: orderData.customer_name || 'Guest',
+          phone: orderData.customer_phone || '',
+          count: orderData.customer_count || 1
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching existing order:', error);
+    }
+  };
+
+  const handleSelectTable = async (table) => {
+    setSelectedTable(table);
+    
+    if (table.is_occupied && table.current_order) {
+      // Table has existing order, fetch it
+      await fetchExistingOrder(table.id);
+      setView('existing');
+    } else {
+      // New table, start fresh
+      setCurrentOrder(null);
+      setCart([]);
+      setCustomerInfo({ name: 'Guest', phone: '', count: 1 });
+      setView('menu');
+    }
+  };
+
   const addToCart = (menuItem) => {
-    const existingItem = cart.find(item => item.menu_item.id === menuItem.id);
+    const existingItem = cart.find(item => item.menu_item?.id === menuItem.id);
     if (existingItem) {
       setCart(cart.map(item => 
-        item.menu_item.id === menuItem.id 
+        item.menu_item?.id === menuItem.id 
           ? { ...item, quantity: item.quantity + 1 }
           : item
       ));
@@ -103,12 +130,20 @@ function WorkingMobileOrders() {
 
   const updateQuantity = (menuItemId, quantity) => {
     if (quantity <= 0) {
-      setCart(cart.filter(item => item.menu_item.id !== menuItemId));
+      setCart(cart.filter(item => item.menu_item?.id !== menuItemId));
     } else {
       setCart(cart.map(item => 
-        item.menu_item.id === menuItemId ? { ...item, quantity } : item
+        item.menu_item?.id === menuItemId ? { ...item, quantity } : item
       ));
     }
+  };
+
+  const updateItemInstructions = (menuItemId, instructions) => {
+    setCart(cart.map(item => 
+      item.menu_item?.id === menuItemId 
+        ? { ...item, special_instructions: instructions }
+        : item
+    ));
   };
 
   const calculateTotal = () => {
@@ -135,9 +170,11 @@ function WorkingMobileOrders() {
         }))
       };
 
-      console.log('Submitting order:', orderData);
+      const apiUrl = currentOrder 
+        ? `/api/tables/orders/${currentOrder.id}/add-items/`
+        : '/api/tables/orders/create/';
 
-      const response = await fetch('/api/tables/mobile/create_order/', {
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,11 +185,16 @@ function WorkingMobileOrders() {
 
       if (response.ok) {
         const result = await response.json();
-        toast.success(`Order created successfully! Order #${result.order_number || result.order_id}`);
+        toast.success(
+          currentOrder 
+            ? 'Items added to existing order!' 
+            : `New order created! Order #${result.order_number || result.order_id}`
+        );
 
-        // Reset form
+        // Reset state
         setCart([]);
         setSelectedTable(null);
+        setCurrentOrder(null);
         setCustomerInfo({ name: 'Guest', phone: '', count: 1 });
         setView('tables');
 
@@ -160,12 +202,12 @@ function WorkingMobileOrders() {
         fetchInitialData();
       } else {
         const error = await response.json();
-        console.error('Order creation error:', error);
-        toast.error('Failed to create order: ' + (error.error || JSON.stringify(error)));
+        console.error('Order creation/update error:', error);
+        toast.error('Failed to process order: ' + (error.error || JSON.stringify(error)));
       }
     } catch (error) {
       console.error('Network error:', error);
-      toast.error('Network error creating order');
+      toast.error('Network error processing order');
     } finally {
       setLoading(false);
     }
@@ -180,7 +222,7 @@ function WorkingMobileOrders() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading tables...</p>
+          <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     );
@@ -193,9 +235,12 @@ function WorkingMobileOrders() {
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-lg font-bold text-gray-900">📱 Waiter Panel</h1>
+              <h1 className="text-lg font-bold text-gray-900">📱 Enhanced Waiter Panel</h1>
               <p className="text-sm text-gray-600">
-                {selectedTable ? `Table ${selectedTable.table_number}` : 'Select a table'}
+                {selectedTable 
+                  ? `Table ${selectedTable.table_number} ${currentOrder ? '(Existing Order)' : '(New Order)'}`
+                  : 'Select a table'
+                }
               </p>
             </div>
             
@@ -203,7 +248,7 @@ function WorkingMobileOrders() {
               <p className="text-xs text-gray-500">{user?.email}</p>
               {cart.length > 0 && (
                 <p className="text-xs text-blue-600 font-medium">
-                  {cart.length} items
+                  {cart.length} items - ₹{calculateTotal().toFixed(2)}
                 </p>
               )}
             </div>
@@ -218,18 +263,32 @@ function WorkingMobileOrders() {
           >
             🪑 Tables
           </button>
-          <button 
-            onClick={() => selectedTable ? setView('menu') : toast.error('Select a table first')}
-            className={`flex-1 py-2 px-4 text-sm font-medium ${view === 'menu' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-          >
-            🍽️ Menu
-          </button>
-          <button 
-            onClick={() => cart.length > 0 ? setView('cart') : toast.error('Add items to cart first')}
-            className={`flex-1 py-2 px-4 text-sm font-medium ${view === 'cart' ? 'bg-blue-100 text-blue-700' : 'text-gray-600'}`}
-          >
-            🛒 Cart ({cart.length})
-          </button>
+          {selectedTable && (
+            <>
+              {currentOrder && (
+                <button 
+                  onClick={() => setView('existing')}
+                  className={`flex-1 py-2 px-4 text-sm font-medium ${view === 'existing' ? 'bg-orange-100 text-orange-700' : 'text-gray-600'}`}
+                >
+                  📋 Current Order
+                </button>
+              )}
+              <button 
+                onClick={() => setView('menu')}
+                className={`flex-1 py-2 px-4 text-sm font-medium ${view === 'menu' ? 'bg-green-100 text-green-700' : 'text-gray-600'}`}
+              >
+                🍽️ Menu
+              </button>
+              {cart.length > 0 && (
+                <button 
+                  onClick={() => setView('cart')}
+                  className={`flex-1 py-2 px-4 text-sm font-medium ${view === 'cart' ? 'bg-purple-100 text-purple-700' : 'text-gray-600'}`}
+                >
+                  🛒 Cart ({cart.length})
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -242,28 +301,23 @@ function WorkingMobileOrders() {
             {tables.map(table => (
               <button
                 key={table.id}
-                onClick={() => {
-                  setSelectedTable(table);
-                  setView('menu');
-                  toast.success(`Table ${table.table_number} selected`);
-                }}
+                onClick={() => handleSelectTable(table)}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   table.is_occupied 
-                    ? 'border-red-200 bg-red-50 text-red-700' 
+                    ? 'border-orange-300 bg-orange-50 text-orange-800' 
                     : 'border-green-200 bg-green-50 text-green-700 hover:border-green-300'
-                } ${selectedTable?.id === table.id ? 'ring-2 ring-blue-500' : ''}`}
-                disabled={table.is_occupied}
+                }`}
               >
                 <div className="text-center">
                   <div className="text-2xl mb-2">
-                    {table.is_occupied ? '🔴' : '🟢'}
+                    {table.is_occupied ? '🟠' : '🟢'}
                   </div>
                   <div className="font-bold">Table {table.table_number}</div>
                   <div className="text-xs mt-1">
                     Capacity: {table.capacity} | {table.location}
                   </div>
                   <div className="text-xs mt-1">
-                    {table.is_occupied ? 'Occupied' : 'Available'}
+                    {table.is_occupied ? 'Has Order - Add Items' : 'Available - New Order'}
                   </div>
                   {table.current_order && (
                     <div className="text-xs mt-1 text-blue-600">
@@ -277,37 +331,87 @@ function WorkingMobileOrders() {
         </div>
       )}
 
+      {/* Existing Order View */}
+      {view === 'existing' && currentOrder && (
+        <div className="p-4">
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+            <h3 className="font-medium text-orange-800 mb-2">📋 Current Order Details</h3>
+            <div className="text-sm text-orange-700">
+              <p>Order #{currentOrder.order_number}</p>
+              <p>Customer: {currentOrder.customer_name} | Phone: {currentOrder.customer_phone}</p>
+              <p>Status: {currentOrder.status} | Total: ₹{currentOrder.total_amount}</p>
+              <p>Created: {new Date(currentOrder.created_at).toLocaleString()}</p>
+            </div>
+          </div>
+
+          <h3 className="font-medium mb-3">Current Items in Order:</h3>
+          <div className="space-y-3 mb-4">
+            {currentOrder.items?.map((item, index) => (
+              <div key={index} className="bg-white rounded-lg p-3 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h4 className="font-medium">{item.menu_item?.name_en}</h4>
+                    <p className="text-sm text-gray-600">₹{item.price} x {item.quantity}</p>
+                    {item.special_instructions && (
+                      <p className="text-sm text-blue-600">Note: {item.special_instructions}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold">₹{(item.price * item.quantity).toFixed(2)}</p>
+                    <p className={`text-xs px-2 py-1 rounded ${
+                      item.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      item.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                      item.status === 'ready' ? 'bg-green-100 text-green-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.status}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-blue-800 font-medium">💡 You can add more items to this existing order</p>
+            <p className="text-blue-700 text-sm">Switch to Menu tab to browse and add items</p>
+          </div>
+        </div>
+      )}
+
       {/* Menu View */}
       {view === 'menu' && selectedTable && (
         <div className="p-4">
-          {/* Customer Info */}
-          <div className="bg-white rounded-lg p-4 mb-4 shadow-sm">
-            <h3 className="font-medium mb-3">Customer Information</h3>
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Customer name"
-                value={customerInfo.name}
-                onChange={(e) => setCustomerInfo({...customerInfo, name: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              <input
-                type="tel"
-                placeholder="Phone number"
-                value={customerInfo.phone}
-                onChange={(e) => setCustomerInfo({...customerInfo, phone: e.target.value})}
-                className="w-full border rounded px-3 py-2"
-              />
-              <input
-                type="number"
-                placeholder="Customer count"
-                value={customerInfo.count}
-                onChange={(e) => setCustomerInfo({...customerInfo, count: parseInt(e.target.value)})}
-                className="w-full border rounded px-3 py-2"
-                min="1"
-              />
+          {/* Customer Info (only for new orders) */}
+          {!currentOrder && (
+            <div className="bg-white rounded-lg p-4 mb-4 shadow-sm">
+              <h3 className="font-medium mb-3">Customer Information</h3>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Customer name"
+                  value={customerInfo.name}
+                  onChange={(e) => setCustomerInfo({...customerInfo, name: e.target.value})}
+                  className="w-full border rounded px-3 py-2"
+                />
+                <input
+                  type="tel"
+                  placeholder="Phone number"
+                  value={customerInfo.phone}
+                  onChange={(e) => setCustomerInfo({...customerInfo, phone: e.target.value})}
+                  className="w-full border rounded px-3 py-2"
+                />
+                <input
+                  type="number"
+                  placeholder="Customer count"
+                  value={customerInfo.count}
+                  onChange={(e) => setCustomerInfo({...customerInfo, count: parseInt(e.target.value)})}
+                  className="w-full border rounded px-3 py-2"
+                  min="1"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Category Filter */}
           <div className="mb-4">
@@ -331,9 +435,6 @@ function WorkingMobileOrders() {
               <div className="text-center py-8 text-gray-500">
                 <div className="text-4xl mb-2">🍽️</div>
                 <p>No menu items available</p>
-                {selectedCategory && (
-                  <p className="text-sm">Try selecting a different category</p>
-                )}
               </div>
             ) : (
               filteredMenuItems.map(item => (
@@ -343,9 +444,6 @@ function WorkingMobileOrders() {
                       <h4 className="font-medium text-gray-900">
                         {language === 'hi' ? item.name_hi : item.name_en}
                       </h4>
-                      {item.name_hi && language !== 'hi' && (
-                        <p className="text-sm text-gray-500">{item.name_hi}</p>
-                      )}
                       {item.description_en && (
                         <p className="text-sm text-gray-600 mt-1">
                           {language === 'hi' ? item.description_hi : item.description_en}
@@ -371,15 +469,17 @@ function WorkingMobileOrders() {
       {/* Cart View */}
       {view === 'cart' && cart.length > 0 && (
         <div className="p-4">
-          <h2 className="text-lg font-semibold mb-4">Order Summary</h2>
+          <h2 className="text-lg font-semibold mb-4">
+            {currentOrder ? 'Adding to Existing Order' : 'New Order Summary'}
+          </h2>
           
           <div className="space-y-3 mb-6">
-            {cart.map(item => (
-              <div key={item.menu_item.id} className="bg-white rounded-lg p-4 shadow-sm">
+            {cart.map((item, index) => (
+              <div key={index} className="bg-white rounded-lg p-4 shadow-sm">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <h4 className="font-medium">
-                      {language === 'hi' ? item.menu_item.name_hi : item.menu_item.name_en}
+                      {language === 'hi' ? item.menu_item?.name_hi : item.menu_item?.name_en}
                     </h4>
                     <p className="text-sm text-gray-600">₹{item.price} each</p>
                   </div>
@@ -406,14 +506,8 @@ function WorkingMobileOrders() {
                     type="text"
                     placeholder="Special instructions"
                     value={item.special_instructions}
-                    onChange={(e) => {
-                      setCart(cart.map(cartItem => 
-                        cartItem.menu_item.id === item.menu_item.id 
-                          ? { ...cartItem, special_instructions: e.target.value }
-                          : cartItem
-                      ));
-                    }}
-                    className="text-sm border rounded px-2 py-1 flex-1 mr-2"
+                    onChange={(e) => updateItemInstructions(item.menu_item.id, e.target.value)}
+                    className="text-sm border rounded px-2 py-1 flex-1"
                   />
                   <span className="font-bold">₹{(item.quantity * item.price).toFixed(2)}</span>
                 </div>
@@ -445,7 +539,7 @@ function WorkingMobileOrders() {
               disabled={loading}
               className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium disabled:opacity-50"
             >
-              {loading ? 'Sending...' : 'Send to Kitchen'}
+              {loading ? 'Processing...' : (currentOrder ? '➕ Add to Order' : '🚀 Send to Kitchen')}
             </button>
           </div>
         </div>
@@ -454,4 +548,5 @@ function WorkingMobileOrders() {
   );
 }
 
-export default withRoleGuard(WorkingMobileOrders, ['admin', 'staff', 'waiter']);
+export default withRoleGuard(EnhancedMobileOrders, ['admin', 'staff', 'waiter']);
+
