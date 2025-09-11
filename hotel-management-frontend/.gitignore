@@ -1,0 +1,31 @@
+node_modules/
+.next/
+.env
+# Python
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env
+
+# VS Code
+.vscode/
+
+# Django stuff
+db.sqlite3
+*.migrations/
+staticfiles/
+media/
+
+# OS
+.DS_Store
+Thumbs.db
+
+node_modules/
