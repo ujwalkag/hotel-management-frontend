@@ -210,13 +210,13 @@ export const AuthProvider = ({ children }) => {
     const getRedirectPath = (role) => {
         switch (role) {
             case 'admin':
-                return '/staff-management';
+                return '/admin/dashboard';
             case 'staff':
-                return '/staff-management';
+                return '/staff/dashbaord';
             case 'waiter':
-                return '/waiter';
+                return '/staff/';
             case 'biller':
-                return '/bills';
+                return '/staff/';
             default:
                 return '/';
         }

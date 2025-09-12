@@ -4,7 +4,7 @@ const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
   env: {
-    NEXT_PUBLIC_API_URL: "https://hotelrshammad.co.in",
+    NEXT_PUBLIC_API_URL: "https://www.hotelrshammad.co.in/api",
     NEXT_PUBLIC_STORAGE_PATH: "/local-storage",
     NEXT_PUBLIC_AUTH_SECRET: "your-secure-secret",
   },

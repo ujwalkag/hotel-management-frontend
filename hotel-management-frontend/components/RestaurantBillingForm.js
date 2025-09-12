@@ -1,11 +1,14 @@
+// components/RestaurantBillingForm.js
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { useRouter } from "next/router";
 import toast from "react-hot-toast";
 
 function RestaurantBillingForm() {
   const { user } = useAuth();
   const { language } = useLanguage();
+  const router = useRouter();
 
   const [items, setItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
@@ -13,206 +16,196 @@ function RestaurantBillingForm() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [includeGST, setIncludeGST] = useState(false);
-  const [gstRate, setGstRate] = useState(5); // Default GST 5%
+  const [gstRate, setGstRate] = useState(5);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
 
   useEffect(() => {
-    fetchItems();
-    fetchCategories();
-    // eslint-disable-next-line
+    if (user?.access) {
+      fetchItems();
+      fetchCategories();
+    }
   }, [user]);
 
-  // Fetch menu items from backend
-  const fetchItems = async () => {
+  async function fetchItems() {
     try {
       const res = await fetch("/api/menu/items/", {
-        headers: { Authorization: `Bearer ${user?.access}` },
+        headers: { Authorization: `Bearer ${user.access}` },
       });
       const data = await res.json();
       setItems(Array.isArray(data) ? data : data.results || []);
-    } catch (e) {
-      console.error("Failed to load items", e);
-      toast.error("Failed to load items");
+    } catch {
+      toast.error(
+        language === "hi" ? "आइटम लोड करने में विफल" : "Failed to load items"
+      );
     }
-  };
+  }
 
-  // Fetch categories from backend (supports paginated and array response)
-  const fetchCategories = async () => {
+  async function fetchCategories() {
     try {
       const res = await fetch("/api/menu/categories/", {
-        headers: { Authorization: `Bearer ${user?.access}` },
+        headers: { Authorization: `Bearer ${user.access}` },
       });
       const data = await res.json();
       setCategories(Array.isArray(data) ? data : data.results || []);
-    } catch (e) {
-      console.error("Failed to load categories", e);
-      toast.error("Failed to load categories");
+    } catch {
+      toast.error(
+        language === "hi" ? "श्रेणियाँ लोड करने में विफल" : "Failed to load categories"
+      );
     }
-  };
+  }
 
-  // Filtered items according to search and category
   const filteredItems = items.filter((item) =>
-    (!selectedCategory || item.category?.id === Number(selectedCategory)) &&
+    (!selectedCategory || item.category?.id === +selectedCategory) &&
     (
-      item.name_en?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.name_hi?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category?.name_en?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category?.name_hi?.toLowerCase().includes(searchQuery.toLowerCase())
+      item.name_en.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.name_hi.toLowerCase().includes(searchQuery.toLowerCase())
     )
   );
 
-  const handleItemToggle = (item) => {
-    const exists = selectedItems.find((i) => i.id === item.id);
-    if (exists) {
-      setSelectedItems(selectedItems.filter((i) => i.id !== item.id));
-    } else {
-      setSelectedItems([...selectedItems, { ...item, quantity: 1 }]);
-    }
-  };
+  function toggleItem(item) {
+    setSelectedItems((prev) => {
+      const exists = prev.find((i) => i.id === item.id);
+      if (exists) return prev.filter((i) => i.id !== item.id);
+      return [...prev, { ...item, quantity: 1 }];
+    });
+  }
 
-  const handleQuantityChange = (id, quantity) => {
+  function changeQuantity(id, qty) {
     setSelectedItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, quantity: Number(quantity) } : item
-      )
+      prev.map((i) => (i.id === id ? { ...i, quantity: +qty } : i))
     );
-  };
+  }
 
-  const handleGenerateBill = async () => {
+  function baseTotal() {
+    return selectedItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  }
+
+  function gstAmount() {
+    return includeGST ? (baseTotal() * gstRate) / 100 : 0;
+  }
+
+  function grandTotal() {
+    return baseTotal() + gstAmount();
+  }
+
+  async function handleGenerateBill() {
     if (!customerName || !customerPhone || selectedItems.length === 0) {
-      toast.error("Fill customer details and select items");
-      return;
+      return toast.error(
+        language === "hi"
+          ? "ग्राहक जानकारी भरें और आइटम चुनें"
+          : "Fill customer details and select items"
+      );
     }
-
     const payload = {
       customer_name: customerName,
       customer_phone: customerPhone,
-      items: selectedItems.map((item) => ({
-        item_id: item.id,
-        quantity: item.quantity,
-      })),
+      items: selectedItems.map((i) => ({ item_id: i.id, quantity: i.quantity })),
       apply_gst: includeGST,
     };
-
     try {
       const res = await fetch("/api/bills/create/restaurant/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${user?.access}`,
+          Authorization: `Bearer ${user.access}`,
         },
         body: JSON.stringify(payload),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.gst_rate) setGstRate(data.gst_rate);
-        toast.success("Bill generated");
-        // Redirect to new bill detail page!
-        window.location.href = `/bills/${data.bill_id}`;
-      } else {
-        const text = await res.text();
-        console.error("Error generating bill:", text);
-        toast.error("Error generating bill: " + text);
-      }
-    } catch (e) {
-      console.error("Server error", e);
-      toast.error("Server error");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error");
+      setGstRate(data.gst_rate || gstRate);
+      toast.success(
+        language === "hi" ? "बिल जनरेट हुआ" : "Bill generated"
+      );
+      router.push(`/admin/billing/${data.bill_id}`);
+    } catch {
+      toast.error(
+        language === "hi"
+          ? "बिल जनरेट करने में त्रुटि"
+          : "Error generating bill"
+      );
     }
-  };
-
-  const calculateBaseTotal = () =>
-    selectedItems.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0
-    );
-
-  const calculateGSTAmount = () => {
-    if (!includeGST) return 0;
-    return (calculateBaseTotal() * (gstRate / 100));
-  };
-
-  const calculateGrandTotal = () => calculateBaseTotal() + calculateGSTAmount();
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">
-        🧾 Restaurant Billing (रेस्टोरेंट बिलिंग)
+        {language === "hi" ? "🧾 रेस्टोरेंट बिलिंग" : "🧾 Restaurant Billing"}
       </h1>
 
+      {/* Customer Info */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
         <input
-          type="text"
-          placeholder="Customer Name (ग्राहक का नाम)"
+          className="border px-3 py-2 rounded"
+          placeholder={
+            language === "hi" ? "ग्राहक का नाम" : "Customer Name"
+          }
           value={customerName}
           onChange={(e) => setCustomerName(e.target.value)}
-          className="border px-3 py-2 rounded"
         />
         <input
-          type="text"
-          placeholder="Phone Number (फोन नंबर)"
+          className="border px-3 py-2 rounded"
+          placeholder={
+            language === "hi" ? "फोन नंबर" : "Phone Number"
+          }
           value={customerPhone}
           onChange={(e) => setCustomerPhone(e.target.value)}
-          className="border px-3 py-2 rounded"
         />
       </div>
 
+      {/* Search & Category */}
       <div className="mb-4 flex gap-4">
         <input
-          type="text"
-          placeholder="🔍 Search items or categories"
+          className="border px-3 py-2 rounded w-full"
+          placeholder={
+            language === "hi"
+              ? "🔍 आइटम खोजें"
+              : "🔍 Search items"
+          }
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="border px-3 py-2 rounded w-full"
         />
         <select
+          className="border px-3 py-2 rounded"
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          className="border px-3 py-2 rounded"
         >
-          <option value="">All Categories</option>
-          {(categories || []).length === 0 && (
-            <option disabled>No categories found</option>
-          )}
-          {(categories || []).map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {language === "hi" ? cat.name_hi : cat.name_en}
+          <option value="">
+            {language === "hi" ? "सभी श्रेणियाँ" : "All Categories"}
+          </option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {language === "hi" ? c.name_hi : c.name_en}
             </option>
           ))}
         </select>
       </div>
 
+      {/* Item Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        {filteredItems.length === 0 && (
-          <div className="col-span-2 text-center text-gray-500">
-            No menu items found for selected category or search.
-          </div>
-        )}
         {filteredItems.map((item) => {
-          const isSelected = selectedItems.find((i) => i.id === item.id);
+          const sel = selectedItems.find((i) => i.id === item.id);
           return (
             <div
               key={item.id}
-              className={`border p-3 rounded shadow-sm ${
-                isSelected ? "bg-green-100" : ""
+              className={`border p-3 rounded cursor-pointer ${
+                sel ? "bg-green-100" : ""
               }`}
-              onClick={() => handleItemToggle(item)}
+              onClick={() => toggleItem(item)}
             >
               <div className="font-semibold">
                 {language === "hi" ? item.name_hi : item.name_en}
               </div>
-              <div className="text-sm text-gray-600">
-                ₹{item.price} • {item.category?.name_en || item.category?.name_hi || "No category"}
-              </div>
-              {isSelected && (
+              <div className="text-gray-600">₹{item.price}</div>
+              {sel && (
                 <input
                   type="number"
                   min="1"
-                  value={isSelected.quantity}
+                  value={sel.quantity}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) =>
-                    handleQuantityChange(item.id, e.target.value)
+                    changeQuantity(item.id, e.target.value)
                   }
                   className="mt-2 border rounded px-2 py-1 w-20"
                 />
@@ -222,6 +215,7 @@ function RestaurantBillingForm() {
         })}
       </div>
 
+      {/* GST Toggle */}
       <div className="flex items-center mb-4">
         <input
           type="checkbox"
@@ -231,30 +225,37 @@ function RestaurantBillingForm() {
           className="mr-2"
         />
         <label htmlFor="gst" className="text-sm">
-          Include GST ({gstRate}%)
+          {language === "hi"
+            ? `जीएसटी शामिल करें (${gstRate}%)`
+            : `Include GST (${gstRate}%)`}
         </label>
       </div>
 
-      <div className="text-md font-semibold mb-1">
-        Base Amount (बिना GST): ₹{calculateBaseTotal().toFixed(2)}
+      {/* Totals */}
+      <div className="mb-1">
+        {language === "hi" ? "बिना GST राशि" : "Base Amount"}: ₹
+        {baseTotal().toFixed(2)}
       </div>
       {includeGST && (
-        <div className="text-md font-semibold mb-1">
-          GST @ {gstRate}% (जीएसटी): ₹{calculateGSTAmount().toFixed(2)}
+        <div className="mb-1">
+          {language === "hi" ? "जीएसटी राशि" : "GST Amount"}: ₹
+          {gstAmount().toFixed(2)}
         </div>
       )}
       <div className="text-xl font-bold mb-4">
-        Total: ₹{calculateGrandTotal().toFixed(2)}
+        {language === "hi" ? "कुल" : "Total"}: ₹{grandTotal().toFixed(2)}
       </div>
 
+      {/* Generate Button */}
       <button
         onClick={handleGenerateBill}
         className="bg-blue-600 text-white px-6 py-2 rounded"
       >
-        ✅ Generate Bill (बिल बनाएं)
+        {language === "hi" ? "✅ बिल बनाएँ" : "✅ Generate Bill"}
       </button>
     </div>
   );
 }
 
 export default RestaurantBillingForm;
+

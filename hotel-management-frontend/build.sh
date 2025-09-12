@@ -25,7 +25,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}   ߚ Frontend Build & Restart Script   ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-
+sudo rm -rf .next
 # Step 1: Build the application
 print_status "Step 1: Running npm run build..."
 if npm run build; then
