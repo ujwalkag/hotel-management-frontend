@@ -1,5 +1,4 @@
 // pages/admin/dashboard.js
-
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import withRoleGuard from "@/hoc/withRoleGuard";
@@ -10,6 +9,7 @@ function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [inventoryStats, setInventoryStats] = useState({});
   const [recentInventoryEntries, setRecentInventoryEntries] = useState([]);
+  const [payrollSummary, setPayrollSummary] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
 
   useEffect(() => {
@@ -45,8 +45,24 @@ function AdminDashboard() {
       }
     }
 
+    async function fetchPayrollData() {
+      try {
+        const payrollRes = await fetch("/api/staff-management/payroll-summary/", {
+          headers: { Authorization: `Bearer ${user.access}` },
+        });
+        if (payrollRes.ok) {
+          const payrollData = await payrollRes.json();
+          setPayrollSummary(payrollData);
+        }
+      } catch (err) {
+        console.error("Error loading payroll data:", err);
+        setPayrollSummary(null);
+      }
+    }
+
     fetchSummary();
     fetchInventoryData();
+    fetchPayrollData();
   }, [user]);
 
   return (
@@ -88,6 +104,16 @@ function AdminDashboard() {
             >
               Inventory
             </button>
+            <button
+              onClick={() => setActiveTab("staff")}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "staff"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Staff & Payroll
+            </button>
           </nav>
         </div>
       </div>
@@ -107,6 +133,7 @@ function AdminDashboard() {
               />
             </div>
           )}
+
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-8">
             <LinkCard href="/admin/restaurant-billing" label="Restaurant Billing" />
             <LinkCard href="/admin/room-billing" label="Room Billing" />
@@ -115,11 +142,10 @@ function AdminDashboard() {
             <LinkCard href="/admin/manage-categories" label="Categories" />
             <LinkCard href="/admin/inventory" label="Inventory" />
             <LinkCard href="/admin/bill-history" label="Bill History" />
-            {/* Only show Staff Management if user is admin */}
-            {user.role === "admin" && (
-              <LinkCard href="/admin/employees" label="Access Management" />
-            )}
+            <LinkCard href="/admin/employees" label="Access Management" />
+            <LinkCard href="/admin/staff-management" label="Staff Management" />
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <QuickActionCard
               href="/admin/restaurant-billing"
@@ -135,15 +161,20 @@ function AdminDashboard() {
               subtitle="Hotel Services"
               description="Manage room bookings and checkout"
             />
-            {user.role === "admin" && (
-              <QuickActionCard
-                href="/admin/employees"
-                icon="👥"
-                title="employee"
-                subtitle="employee access"
-                description="Manage Employee Access to Platform"
-              />
-            )}
+            <QuickActionCard
+              href="/admin/employees"
+              icon="👥"
+              title="Access Management"
+              subtitle="User Access"
+              description="Manage Employee Access to Platform"
+            />
+            <QuickActionCard
+              href="/admin/staff-management"
+              icon="💼"
+              title="Staff Management"
+              subtitle="HR & Payroll"
+              description="Manage staff, attendance, and payroll"
+            />
           </div>
         </>
       )}
@@ -259,6 +290,127 @@ function AdminDashboard() {
               </div>
             )}
           </div>
+        </>
+      )}
+
+      {/* Staff & Payroll Tab */}
+      {activeTab === "staff" && (
+        <>
+          <div className="mb-6 flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Staff & Payroll Summary / कर्मचारी और वेतन सारांश
+            </h2>
+            <Link href="/admin/staff-management">
+              <a className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                🏢 Staff Management
+              </a>
+            </Link>
+          </div>
+
+          {payrollSummary && (
+            <>
+              {/* Payroll Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <StatCard 
+                  label="Total Employees / कुल कर्मचारी" 
+                  value={payrollSummary.total_employees} 
+                  isCount={true}
+                  color="text-green-600"
+                />
+                <StatCard 
+                  label="Monthly Payroll (Attendance) / मासिक वेतन (उपस्थिति)" 
+                  value={payrollSummary.total_paid?.current_month_attendance || 0}
+                  color="text-blue-600"
+                />
+                <StatCard 
+                  label="Total Paid Till Date / कुल भुगतान" 
+                  value={payrollSummary.total_paid?.till_date || 0}
+                  color="text-purple-600"
+                />
+              </div>
+
+              {/* Quick Actions */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                <LinkCard href="/admin/staff-management/employees" label="👤 Manage Employees" />
+                <LinkCard href="/admin/staff-management/attendance" label="📅 Daily Attendance" />
+                <LinkCard href="/admin/staff-management/designations" label="💼 Designations" />
+                <LinkCard href="/admin/staff-management/payroll" label="💰 Payroll Reports" />
+              </div>
+
+              {/* Designation-wise Summary Table */}
+              <div className="bg-white rounded-lg shadow">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Designation-wise Payroll Summary / पदवार वेतन सारांश
+                  </h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Designation / पदनाम
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Employees / कर्मचारी
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Daily Wage / दैनिक मजदूरी
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Monthly Salary / मासिक वेतन
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Monthly Total (Attendance) / मासिक कुल
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Till Date Total / कुल भुगतान
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {payrollSummary.designations?.map((designation) => (
+                        <tr key={designation.name}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {designation.name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {designation.employee_count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ₹{designation.designation_daily_wage?.toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ₹{designation.designation_monthly_salary?.toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ₹{designation.monthly_total_by_attendance?.toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ₹{designation.till_date_total?.toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {!payrollSummary && (
+            <div className="p-8 text-center text-gray-500">
+              <div className="text-4xl mb-4">👥</div>
+              <p className="text-lg mb-4">
+                No staff data available / कोई कर्मचारी डेटा उपलब्ध नहीं
+              </p>
+              <Link href="/admin/staff-management">
+                <a className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                  Set up Staff Management / स्टाफ मैनेजमेंट सेट करें
+                </a>
+              </Link>
+            </div>
+          )}
         </>
       )}
     </div>
