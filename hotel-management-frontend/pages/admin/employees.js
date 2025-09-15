@@ -77,7 +77,9 @@ function Employees() {
     }
 
     const method = form.id ? "PATCH" : "POST";
-    const url = form.id ? `/api/users/staff/${form.id}/` : "/api/users/staff/";
+    const url = form.id 
+    ? `/api/users/staff/${form.id}/`  // This should now work with ModelViewSet
+    : "/api/users/staff/";
 
     let payload = {
       role: form.role,
