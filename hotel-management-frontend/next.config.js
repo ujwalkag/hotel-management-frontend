@@ -1,71 +1,122 @@
+// next.config.js - Enhanced configuration with proper API proxy
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  trailingSlash: false,
-  output: "standalone",
   reactStrictMode: true,
+  swcMinify: true,
+  
+  // Environment variables
   env: {
-    NEXT_PUBLIC_API_URL: "https://www.hotelrshammad.co.in/api",
-    NEXT_PUBLIC_STORAGE_PATH: "/local-storage",
-    NEXT_PUBLIC_AUTH_SECRET: "your-secure-secret",
+    BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:8000',
+    WS_BACKEND_URL: process.env.WS_BACKEND_URL || 'ws://localhost:8000',
   },
-  async redirects() {
-    return [
-      { source: "/rooms", destination: "/admin/rooms", permanent: true },
-      { source: "/menu", destination: "/admin/menu", permanent: true },
-      { source: "/billing/create", destination: "/staff/restaurant-billing", permanent: true },
-      { source: "/admin", destination: "/admin/dashboard", permanent: true },
-      { source: "/staff", destination: "/staff-dashboard", permanent: true },
-      { source: "/:path+/", destination: "/:path+", permanent: true },
-    ];
-  },
+
+  // API rewrites for backend communication
   async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    
     return [
+      // Restaurant API endpoints
       {
-        source: "/api/:path*",
-        destination: "https://hotelrshammad.co.in/api/:path*",
+        source: '/api/restaurant/:path*',
+        destination: `${backendUrl}/api/restaurant/:path*`,
       },
+      
+      // Bills API endpoints
       {
-        source: "/manifest.json",
-        destination: "/manifest.json",
+        source: '/api/bills/:path*',
+        destination: `${backendUrl}/api/bills/:path*`,
+      },
+      
+      // Menu API endpoints  
+      {
+        source: '/api/menu/:path*',
+        destination: `${backendUrl}/api/menu/:path*`,
+      },
+      
+      // Auth API endpoints
+      {
+        source: '/api/auth/:path*',
+        destination: `${backendUrl}/api/auth/:path*`,
+      },
+      
+      // User API endpoints
+      {
+        source: '/api/users/:path*',
+        destination: `${backendUrl}/api/users/:path*`,
+      },
+      
+      // Rooms API endpoints
+      {
+        source: '/api/rooms/:path*',
+        destination: `${backendUrl}/api/rooms/:path*`,
+      },
+      
+      // WebSocket proxy
+      {
+        source: '/ws/:path*',
+        destination: `${backendUrl}/ws/:path*`,
       },
     ];
   },
+
+  // Headers for CORS and WebSocket support
   async headers() {
     return [
       {
-        source: "/api/:path*",
+        source: '/api/:path*',
         headers: [
-          { key: "Access-Control-Allow-Origin", value: "https://hotelrshammad.co.in" },
-          { key: "Access-Control-Allow-Methods", value: "GET,POST,PUT,DELETE,OPTIONS" },
-          { key: "Access-Control-Allow-Headers", value: "Authorization, Content-Type" },
+          { key: 'Access-Control-Allow-Credentials', value: 'true' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
+          { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
         ],
       },
       {
-        source: "/manifest.json",
+        source: '/ws/:path*',
         headers: [
-          { key: "Content-Type", value: "application/manifest+json" },
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+          { key: 'Connection', value: 'Upgrade' },
+          { key: 'Upgrade', value: 'websocket' },
         ],
-      },
-      {
-        source: "/icon-192.svg",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
-      },
-      {
-        source: "/icon-512.svg",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
-      },
-      {
-        source: "/favicon.ico",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
     ];
   },
-  basePath: "",
+
+  // Image optimization settings
   images: {
-    domains: ["hotelrshammad.co.in"],
-    formats: ["image/webp", "image/avif"],
+    domains: ['localhost', '127.0.0.1'],
+    unoptimized: true,
   },
+
+  // Webpack configuration for better builds
+  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        os: false,
+      };
+    }
+    
+    return config;
+  },
+
+  // Experimental features
+  experimental: {
+    serverComponentsExternalPackages: [],
+  },
+
+  // Output configuration
+  output: 'standalone',
+  
+  // Compression
+  compress: true,
+  
+  // Power by header
+  poweredByHeader: false,
+  
+  // Trailing slash
+  trailingSlash: false,
 };
 
 module.exports = nextConfig;

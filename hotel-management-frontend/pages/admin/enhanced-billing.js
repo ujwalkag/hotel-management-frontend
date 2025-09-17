@@ -1,5 +1,4 @@
-
-// pages/admin/enhanced-billing.js - COMPLETELY NEW ENHANCED BILLING DASHBOARD
+// pages/admin/enhanced-billing.js - COMPLETE WITH CUSTOMER HANDLING & GST
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -11,6 +10,8 @@ const EnhancedBilling = () => {
     const [selectedTable, setSelectedTable] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+    // GST and billing settings
     const [gstSettings, setGstSettings] = useState({
         apply_gst: true,
         gst_rate: 18,
@@ -18,8 +19,22 @@ const EnhancedBilling = () => {
         discount_percent: 0,
         discount_amount: 0
     });
+
+    // Bill calculation results
     const [billBreakdown, setBillBreakdown] = useState(null);
+
+    // Customer details management
+    const [showCustomerModal, setShowCustomerModal] = useState(false);
+    const [customerDetails, setCustomerDetails] = useState({
+        name: 'Guest',
+        phone: ''
+    });
+
+    // Item management states
     const [showAddItemModal, setShowAddItemModal] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+
+    // New item form
     const [newItem, setNewItem] = useState({
         item_name: '',
         quantity: 1,
@@ -27,7 +42,15 @@ const EnhancedBilling = () => {
         notes: ''
     });
 
-    // Auto refresh
+    // Bill generation state
+    const [showBillModal, setShowBillModal] = useState(false);
+    const [billCustomer, setBillCustomer] = useState({
+        name: 'Guest',
+        phone: '',
+        payment_method: 'cash'
+    });
+
+    // Auto refresh functionality
     const intervalRef = useRef();
 
     useEffect(() => {
@@ -66,6 +89,18 @@ const EnhancedBilling = () => {
                     const updatedTable = data.active_tables?.find(t => t.table_id === selectedTable.table_id);
                     if (updatedTable) {
                         setSelectedTable(updatedTable);
+                        // Update customer details if available
+                        if (updatedTable.customer_name) {
+                            setBillCustomer(prev => ({
+                                ...prev,
+                                name: updatedTable.customer_name,
+                                phone: updatedTable.customer_phone || ''
+                            }));
+                        }
+                        // Recalculate bill if table updated
+                        if (billBreakdown) {
+                            calculateBill(updatedTable.table_id);
+                        }
                     } else {
                         // Table no longer active, clear selection
                         setSelectedTable(null);
@@ -73,12 +108,13 @@ const EnhancedBilling = () => {
                     }
                 }
             } else {
-                throw new Error('Failed to fetch active tables');
+                const error = await response.text();
+                throw new Error(error || 'Failed to fetch active tables');
             }
         } catch (error) {
             console.error('Error fetching active tables:', error);
             if (!silent) {
-                toast.error('Failed to load active tables');
+                toast.error('Failed to load active tables: ' + error.message);
             }
         } finally {
             setLoading(false);
@@ -90,8 +126,65 @@ const EnhancedBilling = () => {
         setSelectedTable(table);
         setBillBreakdown(null);
 
+        // Set customer info from table data
+        setBillCustomer(prev => ({
+            ...prev,
+            name: table.customer_name || 'Guest',
+            phone: table.customer_phone || ''
+        }));
+
+        setCustomerDetails({
+            name: table.customer_name || 'Guest',
+            phone: table.customer_phone || ''
+        });
+
         // Calculate initial bill breakdown
         await calculateBill(table.table_id);
+    };
+
+    const updateCustomerDetails = async () => {
+        if (!selectedTable) {
+            toast.error('Please select a table first');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/bills/enhanced/update_customer_details/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${user.access}`
+                },
+                body: JSON.stringify({
+                    table_id: selectedTable.table_id,
+                    customer_name: customerDetails.name,
+                    customer_phone: customerDetails.phone
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                toast.success(data.message);
+
+                // Update bill customer details
+                setBillCustomer(prev => ({
+                    ...prev,
+                    name: customerDetails.name,
+                    phone: customerDetails.phone
+                }));
+
+                setShowCustomerModal(false);
+
+                // Refresh tables to get updated data
+                await fetchActiveTables();
+            } else {
+                const error = await response.json();
+                toast.error(error.error || 'Failed to update customer details');
+            }
+        } catch (error) {
+            console.error('Error updating customer details:', error);
+            toast.error('Failed to update customer details: ' + error.message);
+        }
     };
 
     const calculateBill = async (tableId) => {
@@ -117,7 +210,7 @@ const EnhancedBilling = () => {
             }
         } catch (error) {
             console.error('Error calculating bill:', error);
-            toast.error('Failed to calculate bill');
+            toast.error('Failed to calculate bill: ' + error.message);
         }
     };
 
@@ -147,12 +240,12 @@ const EnhancedBilling = () => {
                 const data = await response.json();
                 toast.success(data.message);
 
-                // Refresh data
-                await fetchActiveTables();
-
                 // Reset form and close modal
                 setNewItem({ item_name: '', quantity: 1, price: 0, notes: '' });
                 setShowAddItemModal(false);
+
+                // Refresh data
+                await fetchActiveTables();
 
                 // Recalculate bill
                 if (selectedTable) {
@@ -164,7 +257,7 @@ const EnhancedBilling = () => {
             }
         } catch (error) {
             console.error('Error adding item:', error);
-            toast.error('Failed to add item');
+            toast.error('Failed to add item: ' + error.message);
         }
     };
 
@@ -202,7 +295,7 @@ const EnhancedBilling = () => {
             }
         } catch (error) {
             console.error('Error deleting item:', error);
-            toast.error('Failed to delete item');
+            toast.error('Failed to delete item: ' + error.message);
         }
     };
 
@@ -222,7 +315,7 @@ const EnhancedBilling = () => {
 
             if (response.ok) {
                 const data = await response.json();
-                toast.success('Quantity updated');
+                toast.success('Quantity updated successfully');
 
                 // Refresh data
                 await fetchActiveTables();
@@ -237,7 +330,7 @@ const EnhancedBilling = () => {
             }
         } catch (error) {
             console.error('Error updating quantity:', error);
-            toast.error('Failed to update quantity');
+            toast.error('Failed to update quantity: ' + error.message);
         }
     };
 
@@ -247,11 +340,9 @@ const EnhancedBilling = () => {
             return;
         }
 
-        const customerName = prompt('Enter customer name:', selectedTable.orders[0]?.customer_name || 'Guest');
-        if (!customerName) return;
-
-        const customerPhone = prompt('Enter customer phone (optional):', '') || '';
-        const paymentMethod = prompt('Payment method (cash/card/upi):', 'cash') || 'cash';
+        // Use customer details or defaults
+        const finalCustomerName = billCustomer.name.trim() || 'Guest';
+        const finalCustomerPhone = billCustomer.phone.trim() || 'N/A';
 
         try {
             const response = await fetch('/api/bills/enhanced/generate_final_bill/', {
@@ -262,9 +353,9 @@ const EnhancedBilling = () => {
                 },
                 body: JSON.stringify({
                     table_id: selectedTable.table_id,
-                    customer_name: customerName,
-                    customer_phone: customerPhone,
-                    payment_method: paymentMethod,
+                    customer_name: finalCustomerName,
+                    customer_phone: finalCustomerPhone,
+                    payment_method: billCustomer.payment_method,
                     ...gstSettings
                 })
             });
@@ -272,17 +363,30 @@ const EnhancedBilling = () => {
             if (response.ok) {
                 const data = await response.json();
 
+                // Success notification with D-mart style details
                 toast.success(
-                    `Bill generated successfully!\n` +
+                    `✅ D-mart Style Bill Generated!\n` +
                     `Receipt: ${data.bill.receipt_number}\n` +
+                    `Customer: ${data.bill.customer_name}\n` +
                     `Total: ₹${data.bill.total_amount}\n` +
-                    `Table ${data.table.table_number} is now ${data.table.status}`,
-                    { duration: 6000 }
+                    `Table ${data.table.table_number} is now ${data.table.status}\n` +
+                    `${data.table_freed ? '🆓 Table Freed Successfully!' : ''}`,
+                    { 
+                        duration: 8000,
+                        style: {
+                            background: '#10B981',
+                            color: 'white',
+                            fontWeight: 'bold'
+                        }
+                    }
                 );
 
                 // Clear selection and refresh
                 setSelectedTable(null);
                 setBillBreakdown(null);
+                setShowBillModal(false);
+                setBillCustomer({ name: 'Guest', phone: '', payment_method: 'cash' });
+
                 await fetchActiveTables();
 
             } else {
@@ -291,7 +395,7 @@ const EnhancedBilling = () => {
             }
         } catch (error) {
             console.error('Error generating bill:', error);
-            toast.error('Failed to generate bill');
+            toast.error('Failed to generate bill: ' + error.message);
         }
     };
 
@@ -302,13 +406,26 @@ const EnhancedBilling = () => {
         });
     };
 
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            minimumFractionDigits: 2
+        }).format(amount);
+    };
+
     if (loading) {
         return (
             <DashboardLayout>
-                <div className="flex items-center justify-center h-64">
+                <div className="flex items-center justify-center min-h-screen">
                     <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600">Loading Enhanced Billing Dashboard...</p>
+                        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                        <h2 className="text-xl font-semibold text-gray-700 mb-2">
+                            Loading Enhanced Billing Dashboard
+                        </h2>
+                        <p className="text-gray-500">
+                            Fetching active tables and orders...
+                        </p>
                     </div>
                 </div>
             </DashboardLayout>
@@ -317,90 +434,95 @@ const EnhancedBilling = () => {
 
     return (
         <DashboardLayout>
-            <div className="space-y-6">
+            <div className="p-6 bg-gray-50 min-h-screen">
                 {/* Header */}
-                <div className="flex justify-between items-center">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Enhanced Billing Dashboard</h1>
-                        <p className="text-gray-600 mt-1">
-                            Dynamic table-based billing • Orders from mobile app appear here automatically
-                        </p>
-                    </div>
+                <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-8 rounded-xl shadow-lg mb-8">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-4xl font-bold mb-2">
+                                Enhanced Billing Dashboard
+                            </h1>
+                            <p className="text-blue-100 text-lg">
+                                Professional D-mart style billing with GST compliance • Customer management • Table freeing
+                            </p>
+                        </div>
 
-                    <div className="flex gap-3">
-                        <button
-                            onClick={() => fetchActiveTables()}
-                            disabled={refreshing}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-                        >
-                            {refreshing ? '↻ Refreshing...' : '↻ Refresh'}
-                        </button>
-
-                        <div className="text-sm text-gray-500 px-3 py-2 bg-gray-100 rounded-lg">
-                            Auto-refresh: 30s
+                        <div className="text-right">
+                            <div className="bg-white bg-opacity-20 rounded-lg p-4">
+                                <div className="text-sm text-blue-200">Status</div>
+                                <div className="flex items-center">
+                                    <div className={`w-3 h-3 rounded-full mr-2 ${refreshing ? 'bg-yellow-300 animate-pulse' : 'bg-green-300'}`}></div>
+                                    <span className="text-sm">{refreshing ? 'Refreshing...' : 'Live'}</span>
+                                </div>
+                                <div className="text-xs text-blue-200 mt-1">
+                                    Auto-refresh: 30s
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div className="bg-white p-6 rounded-xl shadow-md">
                         <div className="flex items-center">
-                            <div className="p-2 bg-blue-100 rounded-lg">
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2V7z" />
+                            <div className="bg-blue-100 p-3 rounded-full">
+                                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Active Tables</p>
-                                <p className="text-2xl font-bold text-gray-900">{activeTables.length}</p>
+                                <h3 className="text-sm font-medium text-gray-500">Active Tables</h3>
+                                <p className="text-3xl font-bold text-gray-900">{activeTables.length}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="bg-white p-6 rounded-xl shadow-md">
                         <div className="flex items-center">
-                            <div className="p-2 bg-green-100 rounded-lg">
-                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                            <div className="bg-green-100 p-3 rounded-full">
+                                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Pending Revenue</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    ₹{activeTables.reduce((sum, table) => sum + table.subtotal, 0).toFixed(2)}
+                                <h3 className="text-sm font-medium text-gray-500">Pending Revenue</h3>
+                                <p className="text-3xl font-bold text-gray-900">
+                                    {formatCurrency(activeTables.reduce((sum, table) => sum + table.subtotal, 0))}
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="bg-white p-6 rounded-xl shadow-md">
                         <div className="flex items-center">
-                            <div className="p-2 bg-yellow-100 rounded-lg">
-                                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                            <div className="bg-purple-100 p-3 rounded-full">
+                                <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h2m0 0V9m0 4h8m-8 0l-1-1m1 1l-1 1m8-4v4" />
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                                <p className="text-2xl font-bold text-gray-900">
+                                <h3 className="text-sm font-medium text-gray-500">Total Orders</h3>
+                                <p className="text-3xl font-bold text-gray-900">
                                     {activeTables.reduce((sum, table) => sum + table.orders_count, 0)}
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
+                    <div className="bg-white p-6 rounded-xl shadow-md">
                         <div className="flex items-center">
-                            <div className="p-2 bg-purple-100 rounded-lg">
-                                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            <div className="bg-yellow-100 p-3 rounded-full">
+                                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Avg Order Value</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    ₹{activeTables.length > 0 ? (activeTables.reduce((sum, table) => sum + table.subtotal, 0) / activeTables.length).toFixed(0) : '0'}
+                                <h3 className="text-sm font-medium text-gray-500">Avg Order Value</h3>
+                                <p className="text-3xl font-bold text-gray-900">
+                                    {formatCurrency(activeTables.length > 0 
+                                        ? activeTables.reduce((sum, table) => sum + table.subtotal, 0) / activeTables.length 
+                                        : 0)}
                                 </p>
                             </div>
                         </div>
@@ -408,398 +530,657 @@ const EnhancedBilling = () => {
                 </div>
 
                 {/* Main Content */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Active Tables List */}
-                    <div className="bg-white rounded-lg shadow-sm border">
-                        <div className="p-6 border-b">
-                            <h2 className="text-xl font-semibold text-gray-900">
-                                Active Tables with Orders
-                            </h2>
-                            <p className="text-sm text-gray-600 mt-1">
-                                Click on a table to view details and generate bill
-                            </p>
-                        </div>
+                    <div className="lg:col-span-2">
+                        <div className="bg-white rounded-xl shadow-md">
+                            <div className="p-6 border-b">
+                                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                                    Active Tables with Orders
+                                </h2>
+                                <p className="text-gray-600">
+                                    Click on a table to view details and generate D-mart style bill
+                                </p>
+                            </div>
 
-                        <div className="p-6">
-                            {activeTables.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                    </svg>
-                                    <p className="text-gray-500 text-lg">No active orders</p>
-                                    <p className="text-gray-400 text-sm mt-2">
-                                        Orders placed via mobile app will appear here automatically
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {activeTables.map(table => (
-                                        <div
-                                            key={table.table_id}
-                                            className={`p-4 border-2 rounded-lg cursor-pointer transition ${
-                                                selectedTable?.table_id === table.table_id
-                                                    ? 'border-blue-500 bg-blue-50'
-                                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                                            }`}
-                                            onClick={() => selectTable(table)}
-                                        >
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <h3 className="font-semibold text-lg">
-                                                        Table {table.table_number}
-                                                    </h3>
-                                                    <p className="text-sm text-gray-600">
-                                                        {table.orders_count} order(s) • Cap: {table.table_capacity}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        Last order: {formatTime(table.last_order_time)}
-                                                    </p>
-                                                </div>
-
-                                                <div className="text-right">
-                                                    <p className="text-xl font-bold text-green-600">
-                                                        ₹{table.subtotal.toFixed(2)}
-                                                    </p>
-                                                    <span className="inline-block px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                                                        Ready to Bill
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            {/* Quick preview of items */}
-                                            <div className="mt-3 pt-3 border-t">
-                                                <p className="text-xs text-gray-500">
-                                                    Items: {table.orders.flatMap(order => 
-                                                        order.items.map(item => `${item.name} (${item.quantity})`)
-                                                    ).slice(0, 3).join(', ')}
-                                                    {table.orders.flatMap(order => order.items).length > 3 && '...'}
-                                                </p>
-                                            </div>
+                            <div className="p-6">
+                                {activeTables.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <div className="bg-gray-100 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
+                                            <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                                            </svg>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
+                                        <h3 className="text-lg font-medium text-gray-900 mb-2">No active orders</h3>
+                                        <p className="text-gray-500">
+                                            Orders placed will appear here automatically
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4">
+                                        {activeTables.map(table => (
+                                            <div
+                                                key={table.table_id}
+                                                className={`border rounded-xl p-6 cursor-pointer transition-all hover:shadow-lg ${
+                                                    selectedTable?.table_id === table.table_id 
+                                                        ? 'border-blue-500 bg-blue-50 shadow-md' 
+                                                        : 'border-gray-200 hover:border-blue-300'
+                                                }`}
+                                                onClick={() => selectTable(table)}
+                                            >
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div>
+                                                        <h3 className="text-xl font-bold text-gray-900">
+                                                            Table {table.table_number}
+                                                        </h3>
+                                                        <p className="text-sm text-gray-500">
+                                                            {table.orders_count} order(s) • Cap: {table.table_capacity}
+                                                            {table.table_location && ` • ${table.table_location}`}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            Last order: {formatTime(table.last_order_time)}
+                                                        </p>
+                                                        {/* Customer info display */}
+                                                        <div className="mt-2 flex items-center space-x-4">
+                                                            <span className="text-sm text-blue-600">
+                                                                👤 {table.customer_name || 'Guest'}
+                                                            </span>
+                                                            {table.customer_phone && table.customer_phone !== 'N/A' && (
+                                                                <span className="text-sm text-green-600">
+                                                                    📞 {table.customer_phone}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-2xl font-bold text-green-600">
+                                                            {formatCurrency(table.subtotal)}
+                                                        </div>
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                            Ready to Bill
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Quick preview of items */}
+                                                <div className="border-t pt-3">
+                                                    <p className="text-sm text-gray-600 mb-2">
+                                                        <strong>Items:</strong> {table.orders.flatMap(order => 
+                                                            order.items.map(item => `${item.name} (${item.quantity})`)
+                                                        ).slice(0, 3).join(', ')}
+                                                        {table.orders.flatMap(order => order.items).length > 3 && '...'}
+                                                    </p>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs text-gray-500">
+                                                            Click to manage items & generate bill
+                                                        </span>
+                                                        {selectedTable?.table_id === table.table_id && (
+                                                            <span className="text-xs text-blue-600 font-medium">
+                                                                ← Selected
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
                     {/* Selected Table Details */}
-                    <div className="bg-white rounded-lg shadow-sm border">
+                    <div className="lg:col-span-1">
                         {selectedTable ? (
-                            <>
-                                <div className="p-6 border-b">
-                                    <div className="flex justify-between items-center">
-                                        <h2 className="text-xl font-semibold text-gray-900">
-                                            Table {selectedTable.table_number} Details
-                                        </h2>
+                            <div className="space-y-6">
+                                {/* Customer Management */}
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-xl font-bold text-gray-900">
+                                            Customer Details
+                                        </h3>
+                                        <button
+                                            onClick={() => setShowCustomerModal(true)}
+                                            className="text-blue-500 hover:text-blue-700 text-sm font-medium"
+                                        >
+                                            ✏️ Edit
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="flex items-center">
+                                            <span className="text-gray-600 w-16">Name:</span>
+                                            <span className="font-medium">{billCustomer.name}</span>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <span className="text-gray-600 w-16">Phone:</span>
+                                            <span className="font-medium">{billCustomer.phone || 'Not provided'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Table Management */}
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h3 className="text-xl font-bold text-gray-900 mb-4">
+                                        Table {selectedTable.table_number} Management
+                                    </h3>
+
+                                    <div className="space-y-4">
                                         <button
                                             onClick={() => setShowAddItemModal(true)}
-                                            className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition"
+                                            className="w-full bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors font-medium"
                                         >
-                                            + Add Item
+                                            ➕ Add Custom Item
+                                        </button>
+
+                                        <button
+                                            onClick={() => calculateBill(selectedTable.table_id)}
+                                            className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                                        >
+                                            🧮 Recalculate Bill
                                         </button>
                                     </div>
                                 </div>
 
-                                <div className="p-6 space-y-6">
-                                    {/* Orders and Items */}
-                                    <div>
-                                        <h3 className="font-semibold mb-4">Order Items</h3>
-                                        <div className="space-y-4">
-                                            {selectedTable.orders.map(order => (
-                                                <div key={order.order_id} className="border border-gray-200 rounded-lg p-4">
-                                                    <div className="flex justify-between items-center mb-3">
-                                                        <div>
-                                                            <span className="font-medium">Order #{order.order_number}</span>
-                                                            <span className="ml-2 text-sm text-gray-600">
-                                                                ({order.customer_name})
-                                                            </span>
-                                                        </div>
-                                                        <span className={`px-2 py-1 text-xs rounded-full ${
-                                                            order.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                            order.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                                                            'bg-gray-100 text-gray-800'
-                                                        }`}>
-                                                            {order.status}
-                                                        </span>
-                                                    </div>
+                                {/* Orders and Items */}
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Order Items</h4>
 
-                                                    <div className="space-y-2">
-                                                        {order.items.map(item => (
-                                                            <div key={item.id} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
-                                                                <div className="flex-1">
-                                                                    <span className="font-medium">{item.name}</span>
-                                                                    {item.special_instructions && (
-                                                                        <p className="text-xs text-gray-500 mt-1">
-                                                                            Note: {item.special_instructions}
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <button
-                                                                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                                                                            className="w-6 h-6 bg-red-100 text-red-600 rounded text-sm hover:bg-red-200 transition"
-                                                                        >
-                                                                            -
-                                                                        </button>
-                                                                        <span className="w-8 text-center font-medium">{item.quantity}</span>
-                                                                        <button
-                                                                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                                                            className="w-6 h-6 bg-green-100 text-green-600 rounded text-sm hover:bg-green-200 transition"
-                                                                        >
-                                                                            +
-                                                                        </button>
-                                                                    </div>
-
-                                                                    <span className="w-20 text-right font-semibold">
-                                                                        ₹{item.total.toFixed(2)}
-                                                                    </span>
-
-                                                                    <button
-                                                                        onClick={() => deleteItem(item.id)}
-                                                                        className="text-red-500 hover:text-red-700 ml-2"
-                                                                    >
-                                                                        ✕
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                                        {selectedTable.orders.map(order => (
+                                            <div key={order.order_id} className="border rounded-lg p-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="font-medium text-sm">
+                                                        Order #{order.order_number}
+                                                    </span>
+                                                    <span className={`px-2 py-1 rounded-full text-xs ${
+                                                        order.status === 'served' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                                    }`}>
+                                                        {order.status}
+                                                    </span>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </div>
 
-                                    {/* GST Settings */}
-                                    <div className="border-t pt-6">
-                                        <h3 className="font-semibold mb-4">GST & Billing Options</h3>
+                                                {order.items.map(item => (
+                                                    <div key={item.id} className="flex items-center justify-between py-2 border-t">
+                                                        <div className="flex-1">
+                                                            <div className="font-medium text-sm">{item.name}</div>
+                                                            {item.special_instructions && (
+                                                                <div className="text-xs text-gray-500 italic">
+                                                                    Note: {item.special_instructions}
+                                                                </div>
+                                                            )}
+                                                        </div>
 
-                                        <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div>
-                                                <label className="flex items-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={gstSettings.apply_gst}
-                                                        onChange={(e) => setGstSettings({...gstSettings, apply_gst: e.target.checked})}
-                                                        className="mr-2"
-                                                    />
-                                                    Apply GST
-                                                </label>
+                                                        <div className="flex items-center space-x-2 ml-4">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                value={item.quantity}
+                                                                onChange={(e) => updateQuantity(item.id, parseInt(e.target.value))}
+                                                                className="w-16 text-center border rounded px-1 py-1 text-sm"
+                                                            />
+                                                            <span className="text-sm font-medium">
+                                                                {formatCurrency(item.total)}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => deleteItem(item.id)}
+                                                                className="text-red-500 hover:text-red-700 text-sm p-1"
+                                                                title="Delete item"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
+                                        ))}
+                                    </div>
+                                </div>
 
-                                            <div>
+                                {/* GST Settings */}
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h4 className="text-lg font-semibold text-gray-900 mb-4">GST & Billing Options</h4>
+
+                                    <div className="space-y-4">
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={gstSettings.apply_gst}
+                                                onChange={(e) => {
+                                                    setGstSettings({...gstSettings, apply_gst: e.target.checked});
+                                                    if (selectedTable) calculateBill(selectedTable.table_id);
+                                                }}
+                                                className="mr-2 h-4 w-4 text-blue-600"
+                                            />
+                                            <span className="font-medium">Apply GST</span>
+                                        </label>
+
+                                        {gstSettings.apply_gst && (
+                                            <>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        GST Rate (%)
+                                                    </label>
+                                                    <select
+                                                        value={gstSettings.gst_rate}
+                                                        onChange={(e) => {
+                                                            setGstSettings({...gstSettings, gst_rate: parseFloat(e.target.value)});
+                                                            if (selectedTable) calculateBill(selectedTable.table_id);
+                                                        }}
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                                                    >
+                                                        <option value={0}>0%</option>
+                                                        <option value={5}>5%</option>
+                                                        <option value={12}>12%</option>
+                                                        <option value={18}>18%</option>
+                                                        <option value={28}>28%</option>
+                                                    </select>
+                                                </div>
+
                                                 <label className="flex items-center">
                                                     <input
                                                         type="checkbox"
                                                         checked={gstSettings.interstate}
-                                                        onChange={(e) => setGstSettings({...gstSettings, interstate: e.target.checked})}
-                                                        className="mr-2"
-                                                        disabled={!gstSettings.apply_gst}
+                                                        onChange={(e) => {
+                                                            setGstSettings({...gstSettings, interstate: e.target.checked});
+                                                            if (selectedTable) calculateBill(selectedTable.table_id);
+                                                        }}
+                                                        className="mr-2 h-4 w-4 text-blue-600"
                                                     />
-                                                    Interstate (IGST)
+                                                    <span>Interstate (IGST)</span>
                                                 </label>
-                                            </div>
-                                        </div>
+                                            </>
+                                        )}
 
-                                        <div className="grid grid-cols-3 gap-4 mb-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                    GST Rate (%)
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    value={gstSettings.gst_rate}
-                                                    onChange={(e) => setGstSettings({...gstSettings, gst_rate: parseFloat(e.target.value) || 0})}
-                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                    disabled={!gstSettings.apply_gst}
-                                                />
-                                            </div>
-
+                                        <div className="grid grid-cols-2 gap-3">
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                                     Discount (%)
                                                 </label>
                                                 <input
                                                     type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.1"
                                                     value={gstSettings.discount_percent}
-                                                    onChange={(e) => setGstSettings({...gstSettings, discount_percent: parseFloat(e.target.value) || 0})}
-                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                    onChange={(e) => {
+                                                        setGstSettings({...gstSettings, discount_percent: parseFloat(e.target.value) || 0});
+                                                        if (selectedTable) calculateBill(selectedTable.table_id);
+                                                    }}
+                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
                                                 />
                                             </div>
-
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                                     Discount (₹)
                                                 </label>
                                                 <input
                                                     type="number"
+                                                    min="0"
+                                                    step="0.01"
                                                     value={gstSettings.discount_amount}
-                                                    onChange={(e) => setGstSettings({...gstSettings, discount_amount: parseFloat(e.target.value) || 0})}
-                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                    onChange={(e) => {
+                                                        setGstSettings({...gstSettings, discount_amount: parseFloat(e.target.value) || 0});
+                                                        if (selectedTable) calculateBill(selectedTable.table_id);
+                                                    }}
+                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
                                                 />
                                             </div>
                                         </div>
-
-                                        <button
-                                            onClick={() => calculateBill(selectedTable.table_id)}
-                                            className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition mb-4"
-                                        >
-                                            Calculate Bill
-                                        </button>
                                     </div>
+                                </div>
 
-                                    {/* Bill Breakdown */}
-                                    {billBreakdown && (
-                                        <div className="border-t pt-6">
-                                            <h3 className="font-semibold mb-4">Bill Summary</h3>
+                                {/* Bill Summary with Full GST Display */}
+                                {billBreakdown && (
+                                    <div className="bg-white rounded-xl shadow-md p-6">
+                                        <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                                            📄 D-mart Style Bill Preview
+                                        </h4>
 
-                                            <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                                                <div className="flex justify-between">
-                                                    <span>Subtotal:</span>
-                                                    <span>₹{billBreakdown.subtotal.toFixed(2)}</span>
+                                        <div className="space-y-2 text-sm border p-4 rounded bg-gray-50">
+                                            {/* Header Info */}
+                                            <div className="text-center border-b pb-2 mb-2">
+                                                <div className="font-bold">HOTEL RESTAURANT</div>
+                                                <div className="text-xs">Table {billBreakdown.table_number}</div>
+                                            </div>
+
+                                            {/* Items Summary */}
+                                            <div className="flex justify-between">
+                                                <span>Items ({billBreakdown.item_count}):</span>
+                                                <span>{formatCurrency(billBreakdown.subtotal)}</span>
+                                            </div>
+
+                                            {billBreakdown.discount_amount > 0 && (
+                                                <div className="flex justify-between text-orange-600">
+                                                    <span>Discount:</span>
+                                                    <span>-{formatCurrency(billBreakdown.discount_amount)}</span>
                                                 </div>
+                                            )}
 
-                                                {billBreakdown.discount_amount > 0 && (
-                                                    <div className="flex justify-between text-red-600">
-                                                        <span>Discount:</span>
-                                                        <span>-₹{billBreakdown.discount_amount.toFixed(2)}</span>
-                                                    </div>
-                                                )}
-
-                                                {billBreakdown.gst_applied && (
-                                                    <>
+                                            {billBreakdown.gst_applied && billBreakdown.total_gst_amount > 0 && (
+                                                <>
+                                                    <div className="border-t pt-2">
+                                                        <div className="flex justify-between text-xs text-gray-600">
+                                                            <span>Taxable Amount:</span>
+                                                            <span>{formatCurrency(billBreakdown.taxable_amount)}</span>
+                                                        </div>
                                                         {billBreakdown.interstate ? (
-                                                            <div className="flex justify-between">
+                                                            <div className="flex justify-between text-blue-600">
                                                                 <span>IGST ({billBreakdown.gst_rate}%):</span>
-                                                                <span>₹{billBreakdown.total_gst_amount.toFixed(2)}</span>
+                                                                <span>{formatCurrency(billBreakdown.igst_amount)}</span>
                                                             </div>
                                                         ) : (
                                                             <>
-                                                                <div className="flex justify-between">
-                                                                    <span>CGST ({billBreakdown.gst_rate/2}%):</span>
-                                                                    <span>₹{billBreakdown.cgst_amount.toFixed(2)}</span>
+                                                                <div className="flex justify-between text-blue-600">
+                                                                    <span>CGST ({billBreakdown.cgst_rate}%):</span>
+                                                                    <span>{formatCurrency(billBreakdown.cgst_amount)}</span>
                                                                 </div>
-                                                                <div className="flex justify-between">
-                                                                    <span>SGST ({billBreakdown.gst_rate/2}%):</span>
-                                                                    <span>₹{billBreakdown.sgst_amount.toFixed(2)}</span>
+                                                                <div className="flex justify-between text-blue-600">
+                                                                    <span>SGST ({billBreakdown.sgst_rate}%):</span>
+                                                                    <span>{formatCurrency(billBreakdown.sgst_amount)}</span>
                                                                 </div>
                                                             </>
                                                         )}
-                                                    </>
-                                                )}
+                                                    </div>
+                                                </>
+                                            )}
 
-                                                <div className="border-t pt-2 flex justify-between text-lg font-bold">
-                                                    <span>Total:</span>
-                                                    <span className="text-green-600">₹{billBreakdown.total_amount.toFixed(2)}</span>
-                                                </div>
+                                            <div className="border-t pt-2 flex justify-between font-bold text-lg text-green-600">
+                                                <span>TOTAL AMOUNT:</span>
+                                                <span>{formatCurrency(billBreakdown.total_amount)}</span>
                                             </div>
 
-                                            <button
-                                                onClick={generateFinalBill}
-                                                className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition mt-4 font-semibold"
-                                            >
-                                                🧾 Generate Final Bill & Release Table
-                                            </button>
+                                            {billBreakdown.total_savings > 0 && (
+                                                <div className="bg-green-50 border border-green-200 rounded p-2 mt-2">
+                                                    <div className="text-green-700 font-medium text-center text-xs">
+                                                        🎉 You Saved {formatCurrency(billBreakdown.total_savings)}! 🎉
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                            </>
+
+                                        <button
+                                            onClick={() => setShowBillModal(true)}
+                                            className="w-full mt-6 bg-gradient-to-r from-green-500 to-blue-600 text-white py-3 px-4 rounded-lg font-bold text-lg hover:from-green-600 hover:to-blue-700 transition-all transform hover:scale-105 active:scale-95"
+                                        >
+                                            🧾 Generate Bill & Free Table
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         ) : (
-                            <div className="p-6">
-                                <div className="text-center py-12">
-                                    <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                            <div className="bg-white rounded-xl shadow-md p-12 text-center">
+                                <div className="bg-gray-100 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
+                                    <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h2m0 0V9m0 4h8m-8 0l-1-1m1 1l-1 1m8-4v4" />
                                     </svg>
-                                    <p className="text-gray-500 text-lg">Select a table to view details</p>
-                                    <p className="text-gray-400 text-sm mt-2">
-                                        Choose from active tables on the left to manage orders and generate bills
-                                    </p>
                                 </div>
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                                    Select a table to view details
+                                </h3>
+                                <p className="text-gray-500">
+                                    Choose from active tables on the left to manage orders and generate bills
+                                </p>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Add Item Modal */}
-            {showAddItemModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-                        <h3 className="text-lg font-semibold mb-4">
-                            Add Custom Item to Table {selectedTable?.table_number}
-                        </h3>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Item Name *
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newItem.item_name}
-                                    onChange={(e) => setNewItem({...newItem, item_name: e.target.value})}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Enter item name"
-                                />
+            {/* Customer Details Modal */}
+            {showCustomerModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    Update Customer Details
+                                </h3>
+                                <button
+                                    onClick={() => setShowCustomerModal(false)}
+                                    className="text-gray-500 hover:text-gray-700 text-xl"
+                                >
+                                    ×
+                                </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Quantity *
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Customer Name
                                     </label>
                                     <input
-                                        type="number"
-                                        value={newItem.quantity}
-                                        onChange={(e) => setNewItem({...newItem, quantity: parseInt(e.target.value) || 1})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                        min="1"
+                                        type="text"
+                                        value={customerDetails.name}
+                                        onChange={(e) => setCustomerDetails({...customerDetails, name: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter customer name"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Price (₹) *
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Phone Number (Optional)
                                     </label>
                                     <input
-                                        type="number"
-                                        value={newItem.price}
-                                        onChange={(e) => setNewItem({...newItem, price: parseFloat(e.target.value) || 0})}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                        min="0"
-                                        step="0.01"
+                                        type="tel"
+                                        value={customerDetails.phone}
+                                        onChange={(e) => setCustomerDetails({...customerDetails, phone: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Customer phone number"
                                     />
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Notes (Optional)
-                                </label>
-                                <textarea
-                                    value={newItem.notes}
-                                    onChange={(e) => setNewItem({...newItem, notes: e.target.value})}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    rows="2"
-                                    placeholder="Any special notes"
-                                />
+                            <div className="flex space-x-3 mt-6">
+                                <button
+                                    onClick={() => setShowCustomerModal(false)}
+                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={updateCustomerDetails}
+                                    className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors"
+                                >
+                                    Update Details
+                                </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
 
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={() => setShowAddItemModal(false)}
-                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={addCustomItem}
-                                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-                            >
-                                Add Item
-                            </button>
+            {/* Add Item Modal */}
+            {showAddItemModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    Add Custom Item to Table {selectedTable?.table_number}
+                                </h3>
+                                <button
+                                    onClick={() => setShowAddItemModal(false)}
+                                    className="text-gray-500 hover:text-gray-700 text-xl"
+                                >
+                                    ×
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Item Name *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newItem.item_name}
+                                        onChange={(e) => setNewItem({...newItem, item_name: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter item name"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Quantity *
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={newItem.quantity}
+                                            onChange={(e) => setNewItem({...newItem, quantity: parseInt(e.target.value) || 1})}
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Price (₹) *
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={newItem.price}
+                                            onChange={(e) => setNewItem({...newItem, price: parseFloat(e.target.value) || 0})}
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Notes (Optional)
+                                    </label>
+                                    <textarea
+                                        value={newItem.notes}
+                                        onChange={(e) => setNewItem({...newItem, notes: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        rows="2"
+                                        placeholder="Any special notes"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex space-x-3 mt-6">
+                                <button
+                                    onClick={() => setShowAddItemModal(false)}
+                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={addCustomItem}
+                                    disabled={!newItem.item_name || !newItem.price}
+                                    className="flex-1 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Add Item
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Generate Bill Modal */}
+            {showBillModal && selectedTable && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+                        <div className="p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-bold text-gray-900">
+                                    Generate Final Bill & Free Table
+                                </h3>
+                                <button
+                                    onClick={() => setShowBillModal(false)}
+                                    className="text-gray-500 hover:text-gray-700 text-xl"
+                                >
+                                    ×
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Customer Name (Optional)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={billCustomer.name}
+                                        onChange={(e) => setBillCustomer({...billCustomer, name: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Customer name (defaults to Guest)"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Leave empty for 'Guest'</p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Phone Number (Optional)
+                                    </label>
+                                    <input
+                                        type="tel"
+                                        value={billCustomer.phone}
+                                        onChange={(e) => setBillCustomer({...billCustomer, phone: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Customer phone (optional)"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Leave empty for 'N/A'</p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Payment Method
+                                    </label>
+                                    <select
+                                        value={billCustomer.payment_method}
+                                        onChange={(e) => setBillCustomer({...billCustomer, payment_method: e.target.value})}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="cash">Cash</option>
+                                        <option value="card">Card</option>
+                                        <option value="upi">UPI</option>
+                                        <option value="online">Online</option>
+                                    </select>
+                                </div>
+
+                                {billBreakdown && (
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                        <h4 className="font-medium text-gray-900 mb-2">Bill Summary</h4>
+                                        <div className="text-sm space-y-1">
+                                            <div className="flex justify-between">
+                                                <span>Table:</span>
+                                                <span>#{selectedTable.table_number}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Items:</span>
+                                                <span>{billBreakdown.item_count}</span>
+                                            </div>
+                                            <div className="flex justify-between font-bold text-lg border-t pt-2">
+                                                <span>Total:</span>
+                                                <span>{formatCurrency(billBreakdown.total_amount)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex space-x-3 mt-6">
+                                <button
+                                    onClick={() => setShowBillModal(false)}
+                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={generateFinalBill}
+                                    className="flex-1 bg-gradient-to-r from-green-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-blue-700 transition-all font-medium"
+                                >
+                                    🧾 Generate & Free Table
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -809,4 +1190,3 @@ const EnhancedBilling = () => {
 };
 
 export default EnhancedBilling;
-
