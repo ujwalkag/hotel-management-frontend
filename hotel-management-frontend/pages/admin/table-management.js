@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import AdminOrderManagement from '../../components/AdminOrderManagement';
 
 function TableManagementDashboard() {
     const { user } = useAuth();
@@ -13,7 +14,7 @@ function TableManagementDashboard() {
     const [dashboardStats, setDashboardStats] = useState({});
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    
+
     // Enhanced CRUD Modal States
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
@@ -22,7 +23,11 @@ function TableManagementDashboard() {
     const [editingTable, setEditingTable] = useState(null);
     const [deletingTable, setDeletingTable] = useState(null);
     const [billingTable, setBillingTable] = useState(null);
-    
+
+    // NEW: Admin Order Management States
+    const [showOrderManagement, setShowOrderManagement] = useState(false);
+    const [managingTable, setManagingTable] = useState(null);
+
     // Enhanced Form States
     const [newTableData, setNewTableData] = useState({
         table_number: '',
@@ -32,7 +37,7 @@ function TableManagementDashboard() {
         priority_level: 1,
         notes: ''
     });
-    
+
     const [editTableData, setEditTableData] = useState({
         table_number: '',
         capacity: 4,
@@ -51,10 +56,16 @@ function TableManagementDashboard() {
         notes: '',
         admin_notes: ''
     });
-    
+
+    // NEW: Admin Order Management Function
+    const openOrderManagement = (table) => {
+        setManagingTable(table);
+        setShowOrderManagement(true);
+    };
+
     const wsRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
-
+    
     useEffect(() => {
         connectWebSocket();
         loadInitialData();
@@ -79,7 +90,7 @@ function TableManagementDashboard() {
             wsRef.current.onopen = () => {
                 setIsConnected(true);
                 console.log('Table Management WebSocket connected');
-                
+
                 // Clear any pending reconnection
                 if (reconnectTimeoutRef.current) {
                     clearTimeout(reconnectTimeoutRef.current);
@@ -89,7 +100,7 @@ function TableManagementDashboard() {
             wsRef.current.onclose = () => {
                 setIsConnected(false);
                 console.log('Table Management WebSocket disconnected');
-                
+
                 // Attempt to reconnect after 3 seconds
                 reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
             };
@@ -156,7 +167,7 @@ function TableManagementDashboard() {
     const loadInitialData = async () => {
         try {
             setRefreshing(true);
-            
+
             const [tablesRes, statsRes] = await Promise.all([
                 fetch('/api/restaurant/tables/with_orders/', {
                     headers: { Authorization: `Bearer ${user?.access}` }
@@ -255,8 +266,8 @@ function TableManagementDashboard() {
             }
 
             // Check if table number conflicts with other tables
-            if (tables.some(table => 
-                table.table_number === editTableData.table_number && 
+            if (tables.some(table =>
+                table.table_number === editTableData.table_number &&
                 table.id !== editingTable.id
             )) {
                 toast.error('Table number already exists');
@@ -274,7 +285,7 @@ function TableManagementDashboard() {
 
             if (response.ok) {
                 const updatedTable = await response.json();
-                setTables(prev => prev.map(table => 
+                setTables(prev => prev.map(table =>
                     table.id === editingTable.id ? updatedTable : table
                 ));
                 setShowEditModal(false);
@@ -292,7 +303,7 @@ function TableManagementDashboard() {
         }
     };
 
-    // Enhanced Delete Table Function 
+    // Enhanced Delete Table Function
     const deleteTable = async () => {
         try {
             // Check if table has active orders
@@ -348,14 +359,14 @@ function TableManagementDashboard() {
             if (response.ok) {
                 const result = await response.json();
                 toast.success(`Billing completed. Amount: ₹${result.final_amount}`);
-                
+
                 // Update table status
-                setTables(prev => prev.map(table => 
-                    table.id === billingTable.id 
+                setTables(prev => prev.map(table =>
+                    table.id === billingTable.id
                         ? { ...table, status: 'free', active_orders_count: 0 }
                         : table
                 ));
-                
+
                 setShowBillModal(false);
                 setBillingTable(null);
                 setBillingData({
@@ -366,7 +377,7 @@ function TableManagementDashboard() {
                     notes: '',
                     admin_notes: ''
                 });
-                
+
                 loadInitialData();
             } else {
                 const error = await response.json();
@@ -380,139 +391,135 @@ function TableManagementDashboard() {
     };
 
     // Print Bill Function
-    // pages/admin/table-management.js - FIXED print bill function
-// Replace the printBill function with this fixed version:
+    const printBill = async (table) => {
+        try {
+            const response = await fetch(`/api/restaurant/tables/${table.id}/print_bill/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${user?.access}`
+                }
+            });
 
-const printBill = async (table) => {
-    try {
-        const response = await fetch(`/api/restaurant/tables/${table.id}/print_bill/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${user?.access}`
-            }
-        });
+            if (response.ok) {
+                const result = await response.json();
 
-        if (response.ok) {
-            const result = await response.json();
-            
-            // FIXED: Check if bill_data and receipt_number exist before accessing
-            if (result.bill_data && result.bill_data.receipt_number) {
-                const billData = result.bill_data;
-                const printContent = generatePrintContent(billData);
-                
-                // Open print dialog
-                const printWindow = window.open('', '_blank');
-                printWindow.document.write(printContent);
-                printWindow.document.close();
-                printWindow.print();
-                
-                toast.success('✅ Bill sent to printer');
+                // FIXED: Check if bill_data and receipt_number exist before accessing
+                if (result.bill_data && result.bill_data.receipt_number) {
+                    const billData = result.bill_data;
+                    const printContent = generatePrintContent(billData);
+
+                    // Open print dialog
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write(printContent);
+                    printWindow.document.close();
+                    printWindow.print();
+
+                    toast.success('✅ Bill sent to printer');
+                } else {
+                    toast.error('❌ Bill data not available for printing');
+                    console.error('Bill data missing or incomplete:', result);
+                }
             } else {
-                toast.error('❌ Bill data not available for printing');
-                console.error('Bill data missing or incomplete:', result);
+                const error = await response.json();
+                toast.error(`❌ Failed to print bill: ${error.error || 'Unknown error'}`);
             }
-        } else {
-            const error = await response.json();
-            toast.error(`❌ Failed to print bill: ${error.error || 'Unknown error'}`);
+
+        } catch (error) {
+            console.error('Error printing bill:', error);
+            toast.error('❌ Failed to print bill');
         }
+    };
 
-    } catch (error) {
-        console.error('Error printing bill:', error);
-        toast.error('❌ Failed to print bill');
-    }
-};
+    // FIXED: Generate print content with proper error handling
+    const generatePrintContent = (billData) => {
+        try {
+            // Ensure billData has all required fields
+            const receiptNumber = billData.receipt_number || 'N/A';
+            const tableNumber = billData.table_number || 'N/A';
+            const dateTime = billData.date_time || new Date().toLocaleString();
+            const orders = billData.orders || [];
+            const subtotal = billData.subtotal || 0;
+            const discount = billData.discount || 0;
+            const tax = billData.tax || 0;
+            const serviceCharge = billData.service_charge || 0;
+            const finalAmount = billData.final_amount || 0;
+            const servedBy = billData.served_by || 'System';
 
-// FIXED: Generate print content with proper error handling
-const generatePrintContent = (billData) => {
-    try {
-        // Ensure billData has all required fields
-        const receiptNumber = billData.receipt_number || 'N/A';
-        const tableNumber = billData.table_number || 'N/A';
-        const dateTime = billData.date_time || new Date().toLocaleString();
-        const orders = billData.orders || [];
-        const subtotal = billData.subtotal || 0;
-        const discount = billData.discount || 0;
-        const tax = billData.tax || 0;
-        const serviceCharge = billData.service_charge || 0;
-        const finalAmount = billData.final_amount || 0;
-        const servedBy = billData.served_by || 'System';
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Bill - ${receiptNumber}</title>
+                    <style>
+                        body { font-family: 'Courier New', monospace; margin: 20px; }
+                        .receipt { max-width: 300px; margin: 0 auto; }
+                        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+                        .item-row { display: flex; justify-content: space-between; margin: 5px 0; }
+                        .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
+                        @media print { body { margin: 0; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="receipt">
+                        <div class="header">
+                            <h2>Hotel Management Restaurant</h2>
+                            <p>Receipt: ${receiptNumber}</p>
+                            <p>Table: ${tableNumber}</p>
+                            <p>Date: ${dateTime}</p>
+                        </div>
+                        <div class="items">
+                            ${orders.map(order => `
+                                <div class="item-row">
+                                    <span>${order.item_name || 'Item'} x${order.quantity || 1}</span>
+                                    <span>₹${(order.total_price || 0).toFixed(2)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
 
-        return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Bill - ${receiptNumber}</title>
-                <style>
-                    body { font-family: 'Courier New', monospace; margin: 20px; }
-                    .receipt { max-width: 300px; margin: 0 auto; }
-                    .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-                    .item-row { display: flex; justify-content: space-between; margin: 5px 0; }
-                    .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
-                    @media print { body { margin: 0; } }
-                </style>
-            </head>
-            <body>
-                <div class="receipt">
-                    <div class="header">
-                        <h2>Hotel Management Restaurant</h2>
-                        <p>Receipt: ${receiptNumber}</p>
-                        <p>Table: ${tableNumber}</p>
-                        <p>Date: ${dateTime}</p>
-                    </div>
-                    
-                    <div class="items">
-                        ${orders.map(order => `
+                        <div class="totals">
+                            <hr>
                             <div class="item-row">
-                                <span>${order.item_name || 'Item'} x${order.quantity || 1}</span>
-                                <span>₹${(order.total_price || 0).toFixed(2)}</span>
+                                <span>Subtotal:</span>
+                                <span>₹${subtotal.toFixed(2)}</span>
                             </div>
-                        `).join('')}
-                    </div>
-                    
-                    <div class="totals">
-                        <hr>
-                        <div class="item-row">
-                            <span>Subtotal:</span>
-                            <span>₹${subtotal.toFixed(2)}</span>
+                            <div class="item-row">
+                                <span>Discount:</span>
+                                <span>-₹${discount.toFixed(2)}</span>
+                            </div>
+                            <div class="item-row">
+                                <span>Tax:</span>
+                                <span>₹${tax.toFixed(2)}</span>
+                            </div>
+                            <div class="item-row">
+                                <span>Service Charge:</span>
+                                <span>₹${serviceCharge.toFixed(2)}</span>
+                            </div>
+                            <div class="item-row total-row">
+                                <span>Total:</span>
+                                <span>₹${finalAmount.toFixed(2)}</span>
+                            </div>
                         </div>
-                        <div class="item-row">
-                            <span>Discount:</span>
-                            <span>-₹${discount.toFixed(2)}</span>
-                        </div>
-                        <div class="item-row">
-                            <span>Tax:</span>
-                            <span>₹${tax.toFixed(2)}</span>
-                        </div>
-                        <div class="item-row">
-                            <span>Service Charge:</span>
-                            <span>₹${serviceCharge.toFixed(2)}</span>
-                        </div>
-                        <div class="item-row total-row">
-                            <span>Total:</span>
-                            <span>₹${finalAmount.toFixed(2)}</span>
+
+                        <div style="text-align: center; margin-top: 20px;">
+                            <p>Thank you for dining with us!</p>
+                            <p>Served by: ${servedBy}</p>
                         </div>
                     </div>
-                    
-                    <div style="text-align: center; margin-top: 20px;">
-                        <p>Thank you for dining with us!</p>
-                        <p>Served by: ${servedBy}</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `;
-    } catch (error) {
-        console.error('Error generating print content:', error);
-        return `
-            <html><body>
-                <h2>Hotel Management Restaurant</h2>
-                <p>Error generating bill content</p>
-                <p>Please try again or contact support</p>
-            </body></html>
-        `;
-    }
-};
+                </body>
+                </html>
+            `;
+        } catch (error) {
+            console.error('Error generating print content:', error);
+            return `
+                <html><body>
+                    <h2>Hotel Management Restaurant</h2>
+                    <p>Error generating bill content</p>
+                    <p>Please try again or contact support</p>
+                </body></html>
+            `;
+        }
+    };
 
     // Utility functions
     const updateTableStatus = async (tableId, newStatus) => {
@@ -600,8 +607,8 @@ const generatePrintContent = (billData) => {
                             <div className="flex items-center space-x-4 mt-2">
                                 {/* Connection Status */}
                                 <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                    isConnected 
-                                        ? 'bg-green-100 text-green-800' 
+                                    isConnected
+                                        ? 'bg-green-100 text-green-800'
                                         : 'bg-red-100 text-red-800'
                                 }`}>
                                     {isConnected ? 'Connected' : 'Disconnected'}
@@ -625,13 +632,13 @@ const generatePrintContent = (billData) => {
                                     📱 Mobile Ordering
                                 </a>
                             </Link>
-                            
+
                             <Link href="/admin/kitchen-display" legacyBehavior>
                                 <a className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors">
                                     🍳 Kitchen Display
                                 </a>
                             </Link>
-                            
+
                             <button
                                 onClick={loadInitialData}
                                 disabled={refreshing}
@@ -800,13 +807,25 @@ const generatePrintContent = (billData) => {
                                 {/* Quick Actions */}
                                 {table.status === 'occupied' && table.active_orders_count > 0 && (
                                     <div className="mt-3 pt-3 border-t flex space-x-2">
+                                        {/* NEW: Admin Manage Orders Button */}
+                                        {user?.role === 'admin' && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openOrderManagement(table);
+                                                }}
+                                                className="mt-2 bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600"
+                                            >
+                                                📝 Manage Orders
+                                            </button>
+                                        )}
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setBillingTable(table);
                                                 setShowBillModal(true);
                                             }}
-                                            className="flex-1 px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+                                            className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
                                         >
                                             💳 Bill
                                         </button>
@@ -815,7 +834,7 @@ const generatePrintContent = (billData) => {
                                                 e.stopPropagation();
                                                 printBill(table);
                                             }}
-                                            className="flex-1 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                                            className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
                                         >
                                             🖨️ Print
                                         </button>
@@ -849,7 +868,7 @@ const generatePrintContent = (billData) => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <h3 className="text-lg font-semibold mb-4">Create New Table</h3>
-                        
+
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -961,7 +980,7 @@ const generatePrintContent = (billData) => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <h3 className="text-lg font-semibold mb-4">Edit Table {editingTable.table_number}</h3>
-                        
+
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1077,7 +1096,7 @@ const generatePrintContent = (billData) => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
                         <h3 className="text-lg font-semibold mb-4 text-red-600">Delete Table</h3>
-                        
+
                         <div className="mb-4">
                             <div className="flex items-center mb-4">
                                 <div className="text-red-500 text-4xl mr-4">⚠️</div>
@@ -1286,7 +1305,7 @@ const generatePrintContent = (billData) => {
                                 ✕
                             </button>
                         </div>
-                        
+
                         <div className="space-y-4">
                             {/* Table Info */}
                             <div className="bg-gray-50 p-4 rounded-lg">
@@ -1388,6 +1407,14 @@ const generatePrintContent = (billData) => {
                     </div>
                 </div>
             )}
+
+            {/* NEW: Admin Order Management Modal */}
+            <AdminOrderManagement
+                table={managingTable}
+                isOpen={showOrderManagement}
+                onClose={() => setShowOrderManagement(false)}
+                onOrdersUpdated={loadInitialData}
+            />
         </div>
     );
 }
