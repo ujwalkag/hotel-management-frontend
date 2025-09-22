@@ -141,59 +141,73 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // CRITICAL FIX: Add makeAuthenticatedRequest function
-  const makeAuthenticatedRequest = async (url, options = {}) => {
-    try {
-      const token = localStorage.getItem('access_token');
-      
-      if (!token) {
-        throw new Error('No access token found');
-      }
+ // FIXED: makeAuthenticatedRequest function for AuthContext.js
 
-      const defaultHeaders = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      };
-
-      const requestOptions = {
-        ...options,
-        headers: {
-          ...defaultHeaders,
-          ...options.headers,
-        },
-      };
-
-      // Handle relative URLs
-      const requestUrl = url.startsWith('/') ? `${API_BASE_URL}${url}` : url;
-
-      let response = await fetch(requestUrl, requestOptions);
-
-      // If token expired, try to refresh
-      if (response.status === 401) {
-        const refreshSuccess = await refreshAccessToken();
-        if (refreshSuccess) {
-          // Retry with new token
-          const newToken = localStorage.getItem('access_token');
-          response = await fetch(requestUrl, {
-            ...requestOptions,
-            headers: {
-              ...requestOptions.headers,
-              'Authorization': `Bearer ${newToken}`,
-            },
-          });
-        } else {
-          // Refresh failed, redirect to login
-          router.push('/login');
-          return null;
-        }
-      }
-
-      return response;
-    } catch (error) {
-      console.error('Request failed:', error);
-      throw error;
+const makeAuthenticatedRequest = async (url, options = {}) => {
+  try {
+    const token = localStorage.getItem('access_token');
+    
+    if (!token) {
+      throw new Error('No access token found');
     }
-  };
+
+    const defaultHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+
+    const requestOptions = {
+      ...options,
+      headers: {
+        ...defaultHeaders,
+        ...options.headers,
+      },
+    };
+
+    // FIXED: Handle relative URLs properly to avoid double /api/
+    let requestUrl;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      // Absolute URL, use as-is
+      requestUrl = url;
+    } else if (url.startsWith('/api/')) {
+      // API URL already has /api/, just use the domain + path
+      requestUrl = `${window.location.protocol}//${window.location.host}${url}`;
+    } else if (url.startsWith('/')) {
+      // Other absolute path, add API_BASE_URL
+      requestUrl = `${API_BASE_URL}${url}`;
+    } else {
+      // Relative URL, add API_BASE_URL + /
+      requestUrl = `${API_BASE_URL}/${url}`;
+    }
+
+    let response = await fetch(requestUrl, requestOptions);
+
+    // If token expired, try to refresh
+    if (response.status === 401) {
+      const refreshSuccess = await refreshAccessToken();
+      if (refreshSuccess) {
+        // Retry with new token
+        const newToken = localStorage.getItem('access_token');
+        response = await fetch(requestUrl, {
+          ...requestOptions,
+          headers: {
+            ...requestOptions.headers,
+            'Authorization': `Bearer ${newToken}`,
+          },
+        });
+      } else {
+        // Refresh failed, redirect to login
+        router.push('/login');
+        return null;
+      }
+    }
+
+    return response;
+  } catch (error) {
+    console.error('Request failed:', error);
+    throw error;
+  }
+};
 
   const login = async (email, password) => {
     dispatch({ type: 'AUTH_START' });
@@ -331,3 +345,4 @@ export const useAuth = () => {
 };
 
 export default AuthContext;
+
