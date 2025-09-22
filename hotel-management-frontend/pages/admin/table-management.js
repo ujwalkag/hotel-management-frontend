@@ -380,20 +380,24 @@ function TableManagementDashboard() {
     };
 
     // Print Bill Function
-    const printBill = async (table) => {
-        try {
-            const response = await fetch(`/api/restaurant/tables/${table.id}/print_bill/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${user?.access}`
-                }
-            });
+    // pages/admin/table-management.js - FIXED print bill function
+// Replace the printBill function with this fixed version:
 
-            if (response.ok) {
-                const result = await response.json();
-                
-                // Create and trigger download
+const printBill = async (table) => {
+    try {
+        const response = await fetch(`/api/restaurant/tables/${table.id}/print_bill/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${user?.access}`
+            }
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            
+            // FIXED: Check if bill_data and receipt_number exist before accessing
+            if (result.bill_data && result.bill_data.receipt_number) {
                 const billData = result.bill_data;
                 const printContent = generatePrintContent(billData);
                 
@@ -403,89 +407,112 @@ function TableManagementDashboard() {
                 printWindow.document.close();
                 printWindow.print();
                 
-                toast.success('Bill sent to printer');
+                toast.success('✅ Bill sent to printer');
             } else {
-                const error = await response.json();
-                toast.error(`Failed to print bill: ${error.error}`);
+                toast.error('❌ Bill data not available for printing');
+                console.error('Bill data missing or incomplete:', result);
             }
-
-        } catch (error) {
-            console.error('Error printing bill:', error);
-            toast.error('Failed to print bill');
+        } else {
+            const error = await response.json();
+            toast.error(`❌ Failed to print bill: ${error.error || 'Unknown error'}`);
         }
-    };
 
-    // Generate print content
-    const generatePrintContent = (billData) => {
+    } catch (error) {
+        console.error('Error printing bill:', error);
+        toast.error('❌ Failed to print bill');
+    }
+};
+
+// FIXED: Generate print content with proper error handling
+const generatePrintContent = (billData) => {
+    try {
+        // Ensure billData has all required fields
+        const receiptNumber = billData.receipt_number || 'N/A';
+        const tableNumber = billData.table_number || 'N/A';
+        const dateTime = billData.date_time || new Date().toLocaleString();
+        const orders = billData.orders || [];
+        const subtotal = billData.subtotal || 0;
+        const discount = billData.discount || 0;
+        const tax = billData.tax || 0;
+        const serviceCharge = billData.service_charge || 0;
+        const finalAmount = billData.final_amount || 0;
+        const servedBy = billData.served_by || 'System';
+
         return `
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Bill - ${billData.receipt_number}</title>
+                <title>Bill - ${receiptNumber}</title>
                 <style>
-                    body { font-family: monospace; margin: 20px; }
-                    .header { text-align: center; margin-bottom: 20px; }
-                    .item { display: flex; justify-content: space-between; }
-                    .total { font-weight: bold; margin-top: 10px; }
-                    @media print {
-                        .no-print { display: none; }
-                    }
+                    body { font-family: 'Courier New', monospace; margin: 20px; }
+                    .receipt { max-width: 300px; margin: 0 auto; }
+                    .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+                    .item-row { display: flex; justify-content: space-between; margin: 5px 0; }
+                    .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
+                    @media print { body { margin: 0; } }
                 </style>
             </head>
             <body>
-                <div class="header">
-                    <h2>Hotel Management Restaurant</h2>
-                    <p>Receipt: ${billData.receipt_number}</p>
-                    <p>Table: ${billData.table_number}</p>
-                    <p>Date: ${billData.date_time}</p>
-                </div>
-                
-                <div class="items">
-                    ${billData.orders.map(order => `
-                        <div class="item">
-                            <span>${order.item_name} x${order.quantity}</span>
-                            <span>₹${order.total_price.toFixed(2)}</span>
+                <div class="receipt">
+                    <div class="header">
+                        <h2>Hotel Management Restaurant</h2>
+                        <p>Receipt: ${receiptNumber}</p>
+                        <p>Table: ${tableNumber}</p>
+                        <p>Date: ${dateTime}</p>
+                    </div>
+                    
+                    <div class="items">
+                        ${orders.map(order => `
+                            <div class="item-row">
+                                <span>${order.item_name || 'Item'} x${order.quantity || 1}</span>
+                                <span>₹${(order.total_price || 0).toFixed(2)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div class="totals">
+                        <hr>
+                        <div class="item-row">
+                            <span>Subtotal:</span>
+                            <span>₹${subtotal.toFixed(2)}</span>
                         </div>
-                    `).join('')}
-                </div>
-                
-                <hr>
-                
-                <div class="totals">
-                    <div class="item">
-                        <span>Subtotal:</span>
-                        <span>₹${billData.subtotal.toFixed(2)}</span>
+                        <div class="item-row">
+                            <span>Discount:</span>
+                            <span>-₹${discount.toFixed(2)}</span>
+                        </div>
+                        <div class="item-row">
+                            <span>Tax:</span>
+                            <span>₹${tax.toFixed(2)}</span>
+                        </div>
+                        <div class="item-row">
+                            <span>Service Charge:</span>
+                            <span>₹${serviceCharge.toFixed(2)}</span>
+                        </div>
+                        <div class="item-row total-row">
+                            <span>Total:</span>
+                            <span>₹${finalAmount.toFixed(2)}</span>
+                        </div>
                     </div>
-                    <div class="item">
-                        <span>Discount:</span>
-                        <span>-₹${billData.discount.toFixed(2)}</span>
+                    
+                    <div style="text-align: center; margin-top: 20px;">
+                        <p>Thank you for dining with us!</p>
+                        <p>Served by: ${servedBy}</p>
                     </div>
-                    <div class="item">
-                        <span>Tax:</span>
-                        <span>₹${billData.tax.toFixed(2)}</span>
-                    </div>
-                    <div class="item">
-                        <span>Service Charge:</span>
-                        <span>₹${billData.service_charge.toFixed(2)}</span>
-                    </div>
-                    <div class="item total">
-                        <span>Total:</span>
-                        <span>₹${billData.final_amount.toFixed(2)}</span>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 20px; text-align: center;">
-                    <p>Thank you for dining with us!</p>
-                    <p>Served by: ${billData.served_by}</p>
-                </div>
-                
-                <div class="no-print" style="margin-top: 20px; text-align: center;">
-                    <button onclick="window.print()">Print Bill</button>
                 </div>
             </body>
             </html>
         `;
-    };
+    } catch (error) {
+        console.error('Error generating print content:', error);
+        return `
+            <html><body>
+                <h2>Hotel Management Restaurant</h2>
+                <p>Error generating bill content</p>
+                <p>Please try again or contact support</p>
+            </body></html>
+        `;
+    }
+};
 
     // Utility functions
     const updateTableStatus = async (tableId, newStatus) => {
