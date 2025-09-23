@@ -148,6 +148,8 @@ const makeAuthenticatedRequest = async (url, options = {}) => {
     const token = localStorage.getItem('access_token');
     
     if (!token) {
+      console.warn('No access token found, redirecting to login');
+      router.push('/login');
       throw new Error('No access token found');
     }
 
@@ -172,22 +174,23 @@ const makeAuthenticatedRequest = async (url, options = {}) => {
     } else if (url.startsWith('/api/')) {
       // API URL already has /api/, just use the domain + path
       requestUrl = `${window.location.protocol}//${window.location.host}${url}`;
-    } else if (url.startsWith('/')) {
-      // Other absolute path, add API_BASE_URL
-      requestUrl = `${API_BASE_URL}${url}`;
     } else {
-      // Relative URL, add API_BASE_URL + /
-      requestUrl = `${API_BASE_URL}/${url}`;
+      // Relative URL, add /api prefix
+      requestUrl = `${window.location.protocol}//${window.location.host}/api${url.startsWith('/') ? url : '/' + url}`;
     }
+
+    console.log(`🔗 Making authenticated request to: ${requestUrl}`);
 
     let response = await fetch(requestUrl, requestOptions);
 
     // If token expired, try to refresh
     if (response.status === 401) {
+      console.warn('Token expired, attempting refresh...');
       const refreshSuccess = await refreshAccessToken();
       if (refreshSuccess) {
         // Retry with new token
         const newToken = localStorage.getItem('access_token');
+        console.log('🔄 Retrying request with refreshed token');
         response = await fetch(requestUrl, {
           ...requestOptions,
           headers: {
@@ -197,14 +200,21 @@ const makeAuthenticatedRequest = async (url, options = {}) => {
         });
       } else {
         // Refresh failed, redirect to login
+        console.error('Token refresh failed, redirecting to login');
         router.push('/login');
         return null;
       }
     }
 
+    if (!response.ok && response.status !== 401) {
+      console.error(`❌ Request failed: ${response.status} ${response.statusText}`);
+    } else {
+      console.log(`✅ Request successful: ${response.status}`);
+    }
+
     return response;
   } catch (error) {
-    console.error('Request failed:', error);
+    console.error('❌ Request failed:', error);
     throw error;
   }
 };
