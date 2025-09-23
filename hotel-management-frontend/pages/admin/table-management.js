@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import AdminOrderManagement from '../../components/AdminOrderManagement';
 
 function TableManagementDashboard() {
-    const { user } = useAuth();
+    const { user, makeAuthenticatedRequest } = useAuth(); // FIXED: Added makeAuthenticatedRequest
     const [tables, setTables] = useState([]);
     const [selectedTable, setSelectedTable] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -49,15 +49,16 @@ function TableManagementDashboard() {
 
     // Billing form state
     const [billingData, setBillingData] = useState({
-    customer_name: '',
-    customer_phone: '',
-    discount_amount: 0,
-    discount_percentage: 0,
-    service_charge: 0,
-    payment_method: 'cash',
-    notes: '',
-    admin_notes: ''
-	});
+        customer_name: '',
+        customer_phone: '',
+        discount_amount: 0,
+        discount_percentage: 0,
+        service_charge: 0,
+        payment_method: 'cash',
+        notes: '',
+        admin_notes: ''
+    });
+    
     // Admin Order Management Function - ADDED
     const openOrderManagement = (table) => {
         setManagingTable(table);
@@ -66,7 +67,7 @@ function TableManagementDashboard() {
 
     const wsRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
-    
+
     useEffect(() => {
         connectWebSocket();
         loadInitialData();
@@ -345,132 +346,131 @@ function TableManagementDashboard() {
 
     // Enhanced Billing Function
     const completeBilling = async () => {
-    try {
-        if (!billingTable) return;
+        try {
+            if (!billingTable) return;
 
-        // Validate required fields
-        if (!billingData.customer_name.trim()) {
-            toast.error('Please enter customer name');
-            return;
-        }
+            // Validate required fields
+            if (!billingData.customer_name.trim()) {
+                toast.error('Please enter customer name');
+                return;
+            }
 
-        const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/complete_billing/`, {
-            method: 'POST',
-            body: JSON.stringify({
-                customer_name: billingData.customer_name,
-                customer_phone: billingData.customer_phone,
-                payment_method: billingData.payment_method,
-                discount_amount: billingData.discount_amount,
-                discount_percentage: billingData.discount_percentage,
-                service_charge: billingData.service_charge,
-                notes: billingData.notes,
-                admin_notes: billingData.admin_notes
-            })
-        });
-
-        if (response && response.ok) {
-            const result = await response.json();
-            toast.success(`✅ Billing completed! Total: ₹${result.final_amount}`);
-
-            // Update table status to free
-            setTables(prev => prev.map(table =>
-                table.id === billingTable.id
-                    ? { 
-                        ...table, 
-                        status: 'free', 
-                        active_orders_count: 0,
-                        session_orders_count: 0,
-                        total_bill_amount: 0,
-                        can_bill: false,
-                        has_served_orders: false
-                    }
-                    : table
-            ));
-
-            // Close modal and reset form
-            setShowBillModal(false);
-            setBillingTable(null);
-            setBillingData({
-                customer_name: '',
-                customer_phone: '',
-                discount_amount: 0,
-                discount_percentage: 0,
-                service_charge: 0,
-                payment_method: 'cash',
-                notes: '',
-                admin_notes: ''
+            const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/complete_billing/`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    customer_name: billingData.customer_name,
+                    customer_phone: billingData.customer_phone,
+                    payment_method: billingData.payment_method,
+                    discount_amount: billingData.discount_amount,
+                    discount_percentage: billingData.discount_percentage,
+                    service_charge: billingData.service_charge,
+                    notes: billingData.notes,
+                    admin_notes: billingData.admin_notes
+                })
             });
 
-            // Refresh table data
-            loadInitialData();
-            
-            // Show print option
-            if (confirm('Billing completed! Would you like to print the bill?')) {
-                printCompletedBill(result.receipt_number, billingTable.table_number);
+            if (response && response.ok) {
+                const result = await response.json();
+                toast.success(`✅ Billing completed! Total: ₹${result.final_amount}`);
+
+                // Update table status to free
+                setTables(prev => prev.map(table =>
+                    table.id === billingTable.id
+                        ? {
+                            ...table,
+                            status: 'free',
+                            active_orders_count: 0,
+                            session_orders_count: 0,
+                            total_bill_amount: 0,
+                            can_bill: false,
+                            has_served_orders: false
+                        }
+                        : table
+                ));
+
+                // Close modal and reset form
+                setShowBillModal(false);
+                setBillingTable(null);
+                setBillingData({
+                    customer_name: '',
+                    customer_phone: '',
+                    discount_amount: 0,
+                    discount_percentage: 0,
+                    service_charge: 0,
+                    payment_method: 'cash',
+                    notes: '',
+                    admin_notes: ''
+                });
+
+                // Refresh table data
+                loadInitialData();
+
+                // Show print option
+                if (confirm('Billing completed! Would you like to print the bill?')) {
+                    printCompletedBill(result.receipt_number, billingTable.table_number);
+                }
+            } else {
+                const error = await response.json();
+                toast.error(`❌ Failed to complete billing: ${error.error || 'Unknown error'}`);
             }
-        } else {
-            const error = await response.json();
-            toast.error(`❌ Failed to complete billing: ${error.error || 'Unknown error'}`);
+
+        } catch (error) {
+            console.error('Error completing billing:', error);
+            toast.error('❌ Network error during billing');
         }
+    };
 
-    } catch (error) {
-        console.error('Error completing billing:', error);
-        toast.error('❌ Network error during billing');
-    }
-};
-
-// Enhanced Print Bill Function for completed bills
-const printCompletedBill = async (receiptNumber, tableNumber) => {
-    try {
-        // Generate print content for completed bill
-        const printContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Bill Receipt - ${receiptNumber}</title>
-                <style>
-                    body { font-family: 'Courier New', monospace; margin: 20px; font-size: 12px; }
-                    .receipt { max-width: 300px; margin: 0 auto; }
-                    .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-                    .item-row { display: flex; justify-content: space-between; margin: 3px 0; }
-                    .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
-                    .footer { text-align: center; margin-top: 20px; border-top: 1px solid #000; padding-top: 10px; }
-                    @media print { body { margin: 0; } }
-                </style>
-            </head>
-            <body>
-                <div class="receipt">
-                    <div class="header">
-                        <h2>Hotel Restaurant</h2>
-                        <p>Receipt: ${receiptNumber}</p>
-                        <p>Table: ${tableNumber}</p>
-                        <p>Date: ${new Date().toLocaleDateString('en-IN')}</p>
-                        <p>Time: ${new Date().toLocaleTimeString('en-IN')}</p>
+    // Enhanced Print Bill Function for completed bills
+    const printCompletedBill = async (receiptNumber, tableNumber) => {
+        try {
+            // Generate print content for completed bill
+            const printContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Bill Receipt - ${receiptNumber}</title>
+                    <style>
+                        body { font-family: 'Courier New', monospace; margin: 20px; font-size: 12px; }
+                        .receipt { max-width: 300px; margin: 0 auto; }
+                        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+                        .item-row { display: flex; justify-content: space-between; margin: 3px 0; }
+                        .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
+                        .footer { text-align: center; margin-top: 20px; border-top: 1px solid #000; padding-top: 10px; }
+                        @media print { body { margin: 0; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="receipt">
+                        <div class="header">
+                            <h2>Hotel Restaurant</h2>
+                            <p>Receipt: ${receiptNumber}</p>
+                            <p>Table: ${tableNumber}</p>
+                            <p>Date: ${new Date().toLocaleDateString('en-IN')}</p>
+                            <p>Time: ${new Date().toLocaleTimeString('en-IN')}</p>
+                        </div>
+                        <div class="footer">
+                            <p><strong>PAID</strong></p>
+                            <p>Thank you for dining with us!</p>
+                            <p>Visit again soon!</p>
+                        </div>
                     </div>
-                    
-                    <div class="footer">
-                        <p><strong>PAID</strong></p>
-                        <p>Thank you for dining with us!</p>
-                        <p>Visit again soon!</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `;
+                </body>
+                </html>
+            `;
 
-        // Open print dialog
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-        printWindow.print();
-        printWindow.close();
+            // Open print dialog
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.print();
+            printWindow.close();
 
-        toast.success('✅ Bill sent to printer');
-    } catch (error) {
-        console.error('Error printing bill:', error);
-        toast.error('❌ Failed to print bill');
-    }
-};
+            toast.success('✅ Bill sent to printer');
+        } catch (error) {
+            console.error('Error printing bill:', error);
+            toast.error('❌ Failed to print bill');
+        }
+    };
 
     // FIXED: Generate print content with proper error handling
     const generatePrintContent = (billData) => {
@@ -561,24 +561,26 @@ const printCompletedBill = async (receiptNumber, tableNumber) => {
             `;
         }
     };
-    // Function to check if table is ready for billing
-const isTableReadyForBilling = (table) => {
-    return (
-        table.total_bill_amount > 0 && 
-        (table.can_bill || table.has_served_orders || table.session_orders_count > 0)
-    );
-};
 
-// Function to get table status badge color
-const getTableStatusBadgeColor = (table) => {
-    if (isTableReadyForBilling(table)) {
-        return 'bg-green-100 text-green-800 border-green-200';
-    }
-    if (table.active_orders_count > 0) {
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-    }
-    return getTableStatusColor(table.status);
-};
+    // Function to check if table is ready for billing
+    const isTableReadyForBilling = (table) => {
+        return (
+            table.total_bill_amount > 0 &&
+            (table.can_bill || table.has_served_orders || table.session_orders_count > 0)
+        );
+    };
+
+    // Function to get table status badge color
+    const getTableStatusBadgeColor = (table) => {
+        if (isTableReadyForBilling(table)) {
+            return 'bg-green-100 text-green-800 border-green-200';
+        }
+        if (table.active_orders_count > 0) {
+            return 'bg-orange-100 text-orange-800 border-orange-200';
+        }
+        return getTableStatusColor(table.status);
+    };
+
     // Utility functions
     const updateTableStatus = async (tableId, newStatus) => {
         try {
@@ -863,7 +865,7 @@ const getTableStatusBadgeColor = (table) => {
                                 )}
 
                                 {/* Quick Actions - FIXED to show billing options for tables with served orders */}
-                                {((table.status === 'occupied' && table.active_orders_count > 0) || 
+                                {((table.status === 'occupied' && table.active_orders_count > 0) ||
                                   (table.has_served_orders && table.total_bill_amount > 0)) && (
                                     <div className="mt-3 pt-3 border-t flex space-x-2">
                                         {/* Admin Manage Orders Button - Only for tables with active orders */}
@@ -879,7 +881,7 @@ const getTableStatusBadgeColor = (table) => {
                                                 📝 Manage
                                             </button>
                                         )}
-                                        
+
                                         {/* Billing Button - Show for any table with billable orders */}
                                         {(table.can_bill || table.total_bill_amount > 0) && (
                                             <button
@@ -893,7 +895,7 @@ const getTableStatusBadgeColor = (table) => {
                                                 💳 Bill
                                             </button>
                                         )}
-                                        
+
                                         {/* Print Button - Show for any table with orders */}
                                         {table.total_bill_amount > 0 && (
                                             <button
@@ -1213,227 +1215,226 @@ const getTableStatusBadgeColor = (table) => {
                 </div>
             )}
 
-            {/* Billing Modal */}
-{/* Enhanced Billing Modal with Customer Details */}
-{showBillModal && billingTable && (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-screen overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">
-                💳 Complete Billing - Table {billingTable.table_number}
-            </h3>
+            {/* Enhanced Billing Modal with Customer Details */}
+            {showBillModal && billingTable && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-screen overflow-y-auto">
+                        <h3 className="text-lg font-semibold mb-4">
+                            💳 Complete Billing - Table {billingTable.table_number}
+                        </h3>
 
-            <div className="space-y-4">
-                {/* Current Total Display */}
-                <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                    <div className="text-center">
-                        <div className="text-2xl font-bold text-green-800">
-                            ₹{parseFloat(billingTable.total_bill_amount || 0).toFixed(2)}
-                        </div>
-                        <div className="text-sm text-green-600">
-                            {billingTable.session_orders_count || 0} items • Current Total
-                        </div>
-                    </div>
-                </div>
-
-                {/* Customer Details - REQUIRED */}
-                <div className="border-t pt-4">
-                    <h4 className="font-medium mb-3 text-gray-800">Customer Information</h4>
-                    
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-red-600">
-                            Customer Name *
-                        </label>
-                        <input
-                            type="text"
-                            required
-                            value={billingData.customer_name}
-                            onChange={(e) => setBillingData({
-                                ...billingData,
-                                customer_name: e.target.value
-                            })}
-                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Enter customer name"
-                        />
-                    </div>
-
-                    <div className="mt-3">
-                        <label className="block text-sm font-medium mb-1">
-                            Phone Number (Optional)
-                        </label>
-                        <input
-                            type="tel"
-                            value={billingData.customer_phone}
-                            onChange={(e) => setBillingData({
-                                ...billingData,
-                                customer_phone: e.target.value
-                            })}
-                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Enter phone number"
-                        />
-                    </div>
-                </div>
-
-                {/* Discount Options */}
-                <div className="border-t pt-4">
-                    <h4 className="font-medium mb-3 text-gray-800">Billing Adjustments</h4>
-                    
-                    <div>
-                        <label className="block text-sm font-medium mb-1">
-                            Discount Amount (₹)
-                        </label>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={billingData.discount_amount}
-                            onChange={(e) => setBillingData({
-                                ...billingData,
-                                discount_amount: parseFloat(e.target.value) || 0
-                            })}
-                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                    </div>
-
-                    <div className="mt-3">
-                        <label className="block text-sm font-medium mb-1">
-                            Discount Percentage (%)
-                        </label>
-                        <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                            value={billingData.discount_percentage}
-                            onChange={(e) => setBillingData({
-                                ...billingData,
-                                discount_percentage: parseFloat(e.target.value) || 0
-                            })}
-                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                    </div>
-
-                    <div className="mt-3">
-                        <label className="block text-sm font-medium mb-1">
-                            Service Charge (₹)
-                        </label>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={billingData.service_charge}
-                            onChange={(e) => setBillingData({
-                                ...billingData,
-                                service_charge: parseFloat(e.target.value) || 0
-                            })}
-                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                    </div>
-                </div>
-
-                {/* Payment Method */}
-                <div className="border-t pt-4">
-                    <label className="block text-sm font-medium mb-1">
-                        Payment Method
-                    </label>
-                    <select
-                        value={billingData.payment_method}
-                        onChange={(e) => setBillingData({
-                            ...billingData,
-                            payment_method: e.target.value
-                        })}
-                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                        <option value="cash">💵 Cash</option>
-                        <option value="card">💳 Card</option>
-                        <option value="upi">📱 UPI</option>
-                        <option value="online">🌐 Online</option>
-                        <option value="mixed">🔄 Mixed Payment</option>
-                    </select>
-                </div>
-
-                {/* Notes */}
-                <div className="border-t pt-4">
-                    <div>
-                        <label className="block text-sm font-medium mb-1">
-                            Customer Notes
-                        </label>
-                        <textarea
-                            value={billingData.notes}
-                            onChange={(e) => setBillingData({
-                                ...billingData,
-                                notes: e.target.value
-                            })}
-                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            rows="2"
-                            placeholder="Optional notes for customer"
-                        />
-                    </div>
-
-                    {user?.role === 'admin' && (
-                        <div className="mt-3">
-                            <label className="block text-sm font-medium mb-1">
-                                Admin Notes (Internal)
-                            </label>
-                            <textarea
-                                value={billingData.admin_notes}
-                                onChange={(e) => setBillingData({
-                                    ...billingData,
-                                    admin_notes: e.target.value
-                                })}
-                                className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                rows="2"
-                                placeholder="Internal admin notes"
-                            />
-                        </div>
-                    )}
-                </div>
-
-                {/* Order Summary */}
-                {billingTable.session_orders && billingTable.session_orders.length > 0 && (
-                    <div className="border-t pt-4">
-                        <h4 className="font-medium mb-3 text-gray-800">Order Summary</h4>
-                        <div className="max-h-32 overflow-y-auto">
-                            {billingTable.session_orders.slice(0, 5).map((order, index) => (
-                                <div key={index} className="flex justify-between items-center text-sm py-1">
-                                    <span className="text-gray-600">
-                                        {order.menu_item_name} x{order.quantity}
-                                    </span>
-                                    <span className="font-medium">
-                                        ₹{parseFloat(order.total_price || 0).toFixed(2)}
-                                    </span>
+                        <div className="space-y-4">
+                            {/* Current Total Display */}
+                            <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+                                <div className="text-center">
+                                    <div className="text-2xl font-bold text-green-800">
+                                        ₹{parseFloat(billingTable.total_bill_amount || 0).toFixed(2)}
+                                    </div>
+                                    <div className="text-sm text-green-600">
+                                        {billingTable.session_orders_count || 0} items • Current Total
+                                    </div>
                                 </div>
-                            ))}
-                            {billingTable.session_orders.length > 5 && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                    +{billingTable.session_orders.length - 5} more items
+                            </div>
+
+                            {/* Customer Details - REQUIRED */}
+                            <div className="border-t pt-4">
+                                <h4 className="font-medium mb-3 text-gray-800">Customer Information</h4>
+
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-red-600">
+                                        Customer Name *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={billingData.customer_name}
+                                        onChange={(e) => setBillingData({
+                                            ...billingData,
+                                            customer_name: e.target.value
+                                        })}
+                                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter customer name"
+                                    />
+                                </div>
+
+                                <div className="mt-3">
+                                    <label className="block text-sm font-medium mb-1">
+                                        Phone Number (Optional)
+                                    </label>
+                                    <input
+                                        type="tel"
+                                        value={billingData.customer_phone}
+                                        onChange={(e) => setBillingData({
+                                            ...billingData,
+                                            customer_phone: e.target.value
+                                        })}
+                                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter phone number"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Discount Options */}
+                            <div className="border-t pt-4">
+                                <h4 className="font-medium mb-3 text-gray-800">Billing Adjustments</h4>
+
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">
+                                        Discount Amount (₹)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={billingData.discount_amount}
+                                        onChange={(e) => setBillingData({
+                                            ...billingData,
+                                            discount_amount: parseFloat(e.target.value) || 0
+                                        })}
+                                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div className="mt-3">
+                                    <label className="block text-sm font-medium mb-1">
+                                        Discount Percentage (%)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        value={billingData.discount_percentage}
+                                        onChange={(e) => setBillingData({
+                                            ...billingData,
+                                            discount_percentage: parseFloat(e.target.value) || 0
+                                        })}
+                                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div className="mt-3">
+                                    <label className="block text-sm font-medium mb-1">
+                                        Service Charge (₹)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={billingData.service_charge}
+                                        onChange={(e) => setBillingData({
+                                            ...billingData,
+                                            service_charge: parseFloat(e.target.value) || 0
+                                        })}
+                                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Payment Method */}
+                            <div className="border-t pt-4">
+                                <label className="block text-sm font-medium mb-1">
+                                    Payment Method
+                                </label>
+                                <select
+                                    value={billingData.payment_method}
+                                    onChange={(e) => setBillingData({
+                                        ...billingData,
+                                        payment_method: e.target.value
+                                    })}
+                                    className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="cash">💵 Cash</option>
+                                    <option value="card">💳 Card</option>
+                                    <option value="upi">📱 UPI</option>
+                                    <option value="online">🌐 Online</option>
+                                    <option value="mixed">🔄 Mixed Payment</option>
+                                </select>
+                            </div>
+
+                            {/* Notes */}
+                            <div className="border-t pt-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">
+                                        Customer Notes
+                                    </label>
+                                    <textarea
+                                        value={billingData.notes}
+                                        onChange={(e) => setBillingData({
+                                            ...billingData,
+                                            notes: e.target.value
+                                        })}
+                                        className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        rows="2"
+                                        placeholder="Optional notes for customer"
+                                    />
+                                </div>
+
+                                {user?.role === 'admin' && (
+                                    <div className="mt-3">
+                                        <label className="block text-sm font-medium mb-1">
+                                            Admin Notes (Internal)
+                                        </label>
+                                        <textarea
+                                            value={billingData.admin_notes}
+                                            onChange={(e) => setBillingData({
+                                                ...billingData,
+                                                admin_notes: e.target.value
+                                            })}
+                                            className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            rows="2"
+                                            placeholder="Internal admin notes"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Order Summary */}
+                            {billingTable.session_orders && billingTable.session_orders.length > 0 && (
+                                <div className="border-t pt-4">
+                                    <h4 className="font-medium mb-3 text-gray-800">Order Summary</h4>
+                                    <div className="max-h-32 overflow-y-auto">
+                                        {billingTable.session_orders.slice(0, 5).map((order, index) => (
+                                            <div key={index} className="flex justify-between items-center text-sm py-1">
+                                                <span className="text-gray-600">
+                                                    {order.menu_item_name} x{order.quantity}
+                                                </span>
+                                                <span className="font-medium">
+                                                    ₹{parseFloat(order.total_price || 0).toFixed(2)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {billingTable.session_orders.length > 5 && (
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                +{billingTable.session_orders.length - 5} more items
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
-                    </div>
-                )}
-            </div>
 
-            <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
-                <button
-                    onClick={() => {
-                        setShowBillModal(false);
-                        setBillingTable(null);
-                    }}
-                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-                >
-                    Cancel
-                </button>
-                <button
-                    onClick={completeBilling}
-                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
-                    disabled={!billingData.customer_name.trim()}
-                >
-                    💳 Complete Billing & Free Table
-                </button>
-            </div>
-        </div>
-    </div>
-)}
+                        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                            <button
+                                onClick={() => {
+                                    setShowBillModal(false);
+                                    setBillingTable(null);
+                                }}
+                                className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={completeBilling}
+                                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                                disabled={!billingData.customer_name.trim()}
+                            >
+                                💳 Complete Billing & Free Table
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Table Detail Modal */}
             {selectedTable && (
