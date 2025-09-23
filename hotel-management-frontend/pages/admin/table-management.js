@@ -24,7 +24,7 @@ function TableManagementDashboard() {
     const [deletingTable, setDeletingTable] = useState(null);
     const [billingTable, setBillingTable] = useState(null);
 
-    // NEW: Admin Order Management States
+    // Admin Order Management States - ADDED
     const [showOrderManagement, setShowOrderManagement] = useState(false);
     const [managingTable, setManagingTable] = useState(null);
 
@@ -57,7 +57,7 @@ function TableManagementDashboard() {
         admin_notes: ''
     });
 
-    // NEW: Admin Order Management Function
+    // Admin Order Management Function - ADDED
     const openOrderManagement = (table) => {
         setManagingTable(table);
         setShowOrderManagement(true);
@@ -390,7 +390,7 @@ function TableManagementDashboard() {
         }
     };
 
-    // Print Bill Function
+    // Print Bill Function - FIXED
     const printBill = async (table) => {
         try {
             const response = await fetch(`/api/restaurant/tables/${table.id}/print_bill/`, {
@@ -804,40 +804,50 @@ function TableManagementDashboard() {
                                     </p>
                                 )}
 
-                                {/* Quick Actions */}
-                                {table.status === 'occupied' && table.active_orders_count > 0 && (
+                                {/* Quick Actions - FIXED to show billing options for tables with served orders */}
+                                {((table.status === 'occupied' && table.active_orders_count > 0) || 
+                                  (table.has_served_orders && table.total_bill_amount > 0)) && (
                                     <div className="mt-3 pt-3 border-t flex space-x-2">
-                                        {/* NEW: Admin Manage Orders Button */}
-                                        {user?.role === 'admin' && (
+                                        {/* Admin Manage Orders Button - Only for tables with active orders */}
+                                        {user?.role === 'admin' && table.active_orders_count > 0 && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     openOrderManagement(table);
                                                 }}
-                                                className="mt-2 bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600"
+                                                className="flex-1 px-2 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600"
+                                                title="Manage Orders (Admin)"
                                             >
-                                                📝 Manage Orders
+                                                📝 Manage
                                             </button>
                                         )}
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setBillingTable(table);
-                                                setShowBillModal(true);
-                                            }}
-                                            className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
-                                        >
-                                            💳 Bill
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                printBill(table);
-                                            }}
-                                            className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
-                                        >
-                                            🖨️ Print
-                                        </button>
+                                        
+                                        {/* Billing Button - Show for any table with billable orders */}
+                                        {(table.can_bill || table.total_bill_amount > 0) && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setBillingTable(table);
+                                                    setShowBillModal(true);
+                                                }}
+                                                className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+                                            >
+                                                💳 Bill
+                                            </button>
+                                        )}
+                                        
+                                        {/* Print Button - Show for any table with orders */}
+                                        {table.total_bill_amount > 0 && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    printBill(table);
+                                                }}
+                                                className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                                            >
+                                                🖨️ Print
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1408,7 +1418,7 @@ function TableManagementDashboard() {
                 </div>
             )}
 
-            {/* NEW: Admin Order Management Modal */}
+            {/* Admin Order Management Modal - ADDED */}
             <AdminOrderManagement
                 table={managingTable}
                 isOpen={showOrderManagement}
