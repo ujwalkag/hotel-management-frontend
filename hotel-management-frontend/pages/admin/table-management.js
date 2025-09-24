@@ -171,24 +171,48 @@ function TableManagementDashboard() {
             ]);
 
             if (tablesRes.ok) {
-                const payload = await tablesRes.json();
-                console.log('🔍 Raw API response:', payload);
-                
-                const raw = Array.isArray(payload) ? payload : payload.tables || [];
-                const formatted = raw.map(tbl => ({
-                    ...tbl,
-                    session_orders: tbl.session_orders || [],
-                    session_orders_count: tbl.session_orders_count || 0,
-                    active_orders: tbl.active_orders || [],
-                    active_orders_count: tbl.active_orders_count || 0,
-                    total_bill_amount: tbl.total_bill_amount || 0,
-                    can_bill: tbl.can_bill || false,
-                    has_served_orders: tbl.has_served_orders || false
-                }));
-                
-                console.log('🔍 Formatted tables:', formatted);
-                setTables(formatted);
-            } else {
+    const payload = await tablesRes.json();
+    console.log('🔍 Raw API response:', payload);
+    
+    // Extract the tables array (handle different response formats)
+    const raw = Array.isArray(payload) ? payload : payload.tables || [];
+    
+    // Map with EXPLICIT billing field extraction
+    const formatted = raw.map(tbl => {
+        // EXTRACT BILLING DATA EXPLICITLY
+        const sessionOrders = tbl.session_orders || [];
+        const totalBillAmount = tbl.total_bill_amount || 0;
+        const hasBillingData = sessionOrders.length > 0 || totalBillAmount > 0;
+        
+        console.log(`Table ${tbl.table_number}:`, {
+            sessionOrdersCount: sessionOrders.length,
+            totalBillAmount,
+            hasBillingData
+        });
+        
+        return {
+            ...tbl,
+            // ACTIVE ORDERS (for kitchen display)
+            active_orders: tbl.active_orders || [],
+            active_orders_count: tbl.active_orders_count || 0,
+            
+            // BILLING ORDERS (for billing modal) - CRITICAL MAPPING
+            session_orders: sessionOrders,
+            session_orders_count: sessionOrders.length,
+            total_bill_amount: totalBillAmount,
+            can_bill: hasBillingData,
+            has_served_orders: sessionOrders.some(order => order.status === 'served'),
+            
+            // FRONTEND DISPLAY FLAGS
+            show_billing_options: hasBillingData,
+            is_billable: hasBillingData,
+            billing_ready: hasBillingData
+        };
+    });
+    
+    console.log('🔍 Formatted tables with billing data:', formatted);
+    setTables(formatted);
+}else {
                 throw new Error('Failed to load tables');
             }
 
@@ -1151,67 +1175,111 @@ function TableManagementDashboard() {
                         </h3>
 
                         <div className="space-y-4">
-                            {/* SINGLE Order Summary Section */}
-                            {billingTable.session_orders && billingTable.session_orders.length > 0 ? (
-                                <div className="mb-4">
-                                    <h4 className="font-semibold mb-2">📋 Order Summary</h4>
-                                    <div className="bg-gray-50 p-3 rounded max-h-40 overflow-y-auto">
-                                        {billingTable.session_orders.map((order, index) => (
-                                            <div key={index} className="flex justify-between py-1 border-b">
-                                                <span>
-                                                    {order.menu_item_name} x{order.quantity}
-                                                    {order.status === 'served' && <span className="text-green-600 ml-1">✓</span>}
-                                                </span>
-                                                <span>₹{parseFloat(order.total_price || 0).toFixed(2)}</span>
-                                            </div>
-                                        ))}
-                                        {billingTable.session_orders.length > 5 && (
-                                            <div className="text-center text-gray-500 mt-2">
-                                                +{billingTable.session_orders.length - 5} more items
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded">
-                                    <p className="text-red-600">⚠️ No orders found for this table</p>
-                                    <p className="text-sm text-red-500">
-                                        Orders may not be marked as served yet, or there's a data sync issue.
-                                    </p>
-                                    <button
-                                        onClick={loadInitialData}
-                                        className="mt-2 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
-                                    >
-                                        🔄 Refresh Data
-                                    </button>
-                                </div>
-                            )}
+                            {/* Order Summary Section - FIXED VERSION */}
+{billingTable && (
+    <div className="space-y-4">
+        {/* DEBUG INFO - Remove after fixing */}
+        <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded">
+            <p className="text-xs text-yellow-800">
+                DEBUG: Table {billingTable.table_number} - 
+                Session Orders: {billingTable.session_orders?.length || 0} - 
+                Total: ₹{billingTable.total_bill_amount || 0}
+            </p>
+        </div>
 
-                            {/* SINGLE GST Breakdown Section */}
-                            {billingTable.total_bill_amount > 0 && (
-                                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                                    <h4 className="font-semibold mb-2">💰 Bill Breakdown (GST Included)</h4>
-                                    <div className="text-sm space-y-1">
-                                        <div className="flex justify-between">
-                                            <span>Subtotal (before GST):</span>
-                                            <span>₹{(billingTable.total_bill_amount / 1.18).toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>CGST (9%):</span>
-                                            <span>₹{((billingTable.total_bill_amount - billingTable.total_bill_amount / 1.18) / 2).toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>SGST (9%):</span>
-                                            <span>₹{((billingTable.total_bill_amount - billingTable.total_bill_amount / 1.18) / 2).toFixed(2)}</span>
-                                        </div>
-                                        <hr className="my-1" />
-                                        <div className="flex justify-between font-bold">
-                                            <span>Total (including GST):</span>
-                                            <span>₹{parseFloat(billingTable.total_bill_amount).toFixed(2)}</span>
-                                        </div>
+        {/* Order Summary */}
+        {billingTable.session_orders && billingTable.session_orders.length > 0 ? (
+            <div className="mb-4">
+                <h4 className="font-semibold mb-2 text-gray-800">
+                    📋 Order Summary ({billingTable.session_orders.length} items)
+                </h4>
+                <div className="bg-gray-50 p-3 rounded max-h-40 overflow-y-auto">
+                    {billingTable.session_orders.map((order, index) => (
+                        <div key={`${order.id}-${index}`} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-b-0">
+                            <div className="flex-1">
+                                <span className="font-medium text-gray-900">
+                                    {order.menu_item_name}
+                                </span>
+                                <span className="text-gray-600 ml-2">
+                                    x{order.quantity}
+                                </span>
+                                {order.status === 'served' && (
+                                    <span className="text-green-600 ml-2 text-sm">✓ Served</span>
+                                )}
+                                {order.special_instructions && (
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        Note: {order.special_instructions}
                                     </div>
+                                )}
+                            </div>
+                            <div className="text-right">
+                                <div className="font-semibold text-gray-900">
+                                    ₹{parseFloat(order.total_price || 0).toFixed(2)}
                                 </div>
-                            )}
+                                <div className="text-xs text-gray-500">
+                                    ₹{parseFloat(order.unit_price || 0).toFixed(2)} each
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                
+                {/* Subtotal */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="flex justify-between items-center font-semibold text-gray-900">
+                        <span>Subtotal ({billingTable.session_orders.length} items):</span>
+                        <span>₹{parseFloat(billingTable.total_bill_amount || 0).toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+        ) : (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded">
+                <div className="flex items-center">
+                    <span className="text-red-500 text-xl mr-3">⚠️</span>
+                    <div>
+                        <p className="text-red-800 font-medium">No orders found for this table</p>
+                        <p className="text-red-600 text-sm mt-1">
+                            Orders may not be marked as served yet, or there's a data sync issue.
+                        </p>
+                        <button 
+                            onClick={loadInitialData}
+                            className="mt-2 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                        >
+                            🔄 Refresh Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* GST Breakdown */}
+        {billingTable.total_bill_amount > 0 && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                <h4 className="font-semibold mb-2 text-gray-800">💰 Bill Breakdown (GST 18%)</h4>
+                <div className="text-sm space-y-1">
+                    <div className="flex justify-between">
+                        <span>Subtotal (before GST):</span>
+                        <span>₹{(billingTable.total_bill_amount / 1.18).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>CGST (9%):</span>
+                        <span>₹{((billingTable.total_bill_amount - billingTable.total_bill_amount / 1.18) / 2).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>SGST (9%):</span>
+                        <span>₹{((billingTable.total_bill_amount - billingTable.total_bill_amount / 1.18) / 2).toFixed(2)}</span>
+                    </div>
+                    <hr className="my-2" />
+                    <div className="flex justify-between font-bold text-base">
+                        <span>Total (including GST):</span>
+                        <span>₹{parseFloat(billingTable.total_bill_amount).toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+        )}
+    </div>
+)}
+
 
                             {/* Current Total Display */}
                             <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
