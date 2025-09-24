@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
 import toast from 'react-hot-toast';
+import Link from 'next/link';  
 
 function MobileOrderingInterface() {
   // CRITICAL FIX: Use makeAuthenticatedRequest from auth context
@@ -399,6 +400,30 @@ function MobileOrderingInterface() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
+	  {/* Navigation Buttons - ADD THIS */}
+<div className="flex space-x-2">
+    <Link
+        href="/admin/table-management"
+        className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center"
+    >
+        🏪 Table Management
+    </Link>
+    <Link
+        href="/admin/kitchen-display"
+        className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center"
+    >
+        🍳 Kitchen Display
+    </Link>
+     <button
+    onClick={loadInitialData}  // ← CORRECT FUNCTION
+    className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center"
+    disabled={isLoading}
+>
+    🔄 {isLoading ? 'Refreshing...' : 'Refresh'}
+</button>
+
+</div>
+
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
