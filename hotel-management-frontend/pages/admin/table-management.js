@@ -1,4 +1,3 @@
-// pages/admin/table-management.js - Enhanced Table Management with Complete Functionality
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
@@ -14,6 +13,14 @@ function TableManagementDashboard() {
     const [dashboardStats, setDashboardStats] = useState({});
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+
+    // Add Order Modal States - ADD THESE
+    const [showAddOrderModal, setShowAddOrderModal] = useState(false);
+    const [menuItems, setMenuItems] = useState([]);
+    const [selectedMenuItems, setSelectedMenuItems] = useState([]);
+    const [orderingTable, setOrderingTable] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Enhanced CRUD Modal States
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -58,7 +65,7 @@ function TableManagementDashboard() {
         notes: '',
         admin_notes: ''
     });
-    
+
     // Admin Order Management Function - ADDED
     const openOrderManagement = (table) => {
         setManagingTable(table);
@@ -181,8 +188,16 @@ function TableManagementDashboard() {
 
             if (tablesRes.ok) {
                 const tablesData = await tablesRes.json();
-                setTables(tablesData);
-            } else {
+                // FIXED: Handle response properly
+                if (Array.isArray(tablesData)) {
+                    setTables(tablesData);
+                } else if (tablesData.tables) {
+                    setTables(tablesData.tables);  // ← THIS FIXES THE ISSUE
+                } else {
+                    setTables([]);
+                }
+            }
+            else {
                 throw new Error('Failed to load tables');
             }
 
@@ -419,44 +434,122 @@ function TableManagementDashboard() {
             toast.error('❌ Network error during billing');
         }
     };
+    // Load Menu Items - ADD THIS FUNCTION
+    const loadMenuItems = async () => {
+        try {
+            const response = await fetch('/api/restaurant/menu-for-ordering/', {
+                headers: { Authorization: `Bearer ${user?.access}` }
+            });
+            if (response.ok) {
+                const menuData = await response.json();
+                setMenuItems(menuData);
+            }
+        } catch (error) {
+            console.error('Error loading menu:', error);
+            toast.error('Failed to load menu items');
+        }
+    };
+
+    // Open Add Order Modal - ADD THIS FUNCTION
+    const openAddOrderModal = (table) => {
+        setOrderingTable(table);
+        setShowAddOrderModal(true);
+        setSelectedMenuItems([]);
+        setSearchQuery('');
+        loadMenuItems();
+    };
+
+    // Add Item to Order - ADD THIS FUNCTION
+    const addItemToOrder = (item) => {
+        const existingItem = selectedMenuItems.find(selected => selected.id === item.id);
+        if (existingItem) {
+            setSelectedMenuItems(prev => prev.map(selected =>
+                selected.id === item.id
+                    ? { ...selected, quantity: selected.quantity + 1 }
+                    : selected
+            ));
+        } else {
+            setSelectedMenuItems(prev => [...prev, { ...item, quantity: 1 }]);
+        }
+    };
+
+    // Place Order - ADD THIS FUNCTION
+    const placeOrderForTable = async () => {
+        if (!orderingTable || selectedMenuItems.length === 0) {
+            toast.error('Please select items to order');
+            return;
+        }
+
+        try {
+            const orders = selectedMenuItems.map(item => ({
+                menu_item_id: item.id,
+                quantity: item.quantity,
+                special_instructions: ''
+            }));
+
+            const response = await fetch('/api/restaurant/orders/bulk_create/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${user?.access}`
+                },
+                body: JSON.stringify({
+                    table: orderingTable.id,
+                    orders: orders
+                })
+            });
+
+            if (response.ok) {
+                toast.success(`Order placed for Table ${orderingTable.table_number}`);
+                setShowAddOrderModal(false);
+                loadInitialData(); // Refresh table data
+            } else {
+                const error = await response.json();
+                toast.error(`Failed to place order: ${error.detail || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Error placing order:', error);
+            toast.error('Network error while placing order');
+        }
+    };
 
     // Enhanced Print Bill Function for completed bills
     const printCompletedBill = async (receiptNumber, tableNumber) => {
         try {
             // Generate print content for completed bill
             const printContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Bill Receipt - ${receiptNumber}</title>
-                    <style>
-                        body { font-family: 'Courier New', monospace; margin: 20px; font-size: 12px; }
-                        .receipt { max-width: 300px; margin: 0 auto; }
-                        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-                        .item-row { display: flex; justify-content: space-between; margin: 3px 0; }
-                        .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
-                        .footer { text-align: center; margin-top: 20px; border-top: 1px solid #000; padding-top: 10px; }
-                        @media print { body { margin: 0; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="receipt">
-                        <div class="header">
-                            <h2>Hotel Restaurant</h2>
-                            <p>Receipt: ${receiptNumber}</p>
-                            <p>Table: ${tableNumber}</p>
-                            <p>Date: ${new Date().toLocaleDateString('en-IN')}</p>
-                            <p>Time: ${new Date().toLocaleTimeString('en-IN')}</p>
-                        </div>
-                        <div class="footer">
-                            <p><strong>PAID</strong></p>
-                            <p>Thank you for dining with us!</p>
-                            <p>Visit again soon!</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                      <title>Bill Receipt - ${receiptNumber}</title>
+                      <style>
+                          body { font-family: 'Courier New', monospace; margin: 20px; font-size: 12px; }
+                          .receipt { max-width: 300px; margin: 0 auto; }
+                          .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+                          .item-row { display: flex; justify-content: space-between; margin: 3px 0; }
+                          .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
+                          .footer { text-align: center; margin-top: 20px; border-top: 1px solid #000; padding-top: 10px; }
+                          @media print { body { margin: 0; } }
+                      </style>
+                  </head>
+                  <body>
+                      <div class="receipt">
+                          <div class="header">
+                              <h2>Hotel Restaurant</h2>
+                              <p>Receipt: ${receiptNumber}</p>
+                              <p>Table: ${tableNumber}</p>
+                              <p>Date: ${new Date().toLocaleDateString('en-IN')}</p>
+                              <p>Time: ${new Date().toLocaleTimeString('en-IN')}</p>
+                          </div>
+                          <div class="footer">
+                              <p><strong>PAID</strong></p>
+                              <p>Thank you for dining with us!</p>
+                              <p>Visit again soon!</p>
+                          </div>
+                      </div>
+                  </body>
+                  </html>
+              `;
 
             // Open print dialog
             const printWindow = window.open('', '_blank');
@@ -488,77 +581,77 @@ function TableManagementDashboard() {
             const servedBy = billData.served_by || 'System';
 
             return `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Bill - ${receiptNumber}</title>
-                    <style>
-                        body { font-family: 'Courier New', monospace; margin: 20px; }
-                        .receipt { max-width: 300px; margin: 0 auto; }
-                        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-                        .item-row { display: flex; justify-content: space-between; margin: 5px 0; }
-                        .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
-                        @media print { body { margin: 0; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="receipt">
-                        <div class="header">
-                            <h2>Hotel Management Restaurant</h2>
-                            <p>Receipt: ${receiptNumber}</p>
-                            <p>Table: ${tableNumber}</p>
-                            <p>Date: ${dateTime}</p>
-                        </div>
-                        <div class="items">
-                            ${orders.map(order => `
-                                <div class="item-row">
-                                    <span>${order.item_name || 'Item'} x${order.quantity || 1}</span>
-                                    <span>₹${(order.total_price || 0).toFixed(2)}</span>
-                                </div>
-                            `).join('')}
-                        </div>
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                      <title>Bill - ${receiptNumber}</title>
+                      <style>
+                          body { font-family: 'Courier New', monospace; margin: 20px; }
+                          .receipt { max-width: 300px; margin: 0 auto; }
+                          .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+                          .item-row { display: flex; justify-content: space-between; margin: 5px 0; }
+                          .total-row { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; font-weight: bold; }
+                          @media print { body { margin: 0; } }
+                      </style>
+                  </head>
+                  <body>
+                      <div class="receipt">
+                          <div class="header">
+                              <h2>Hotel Management Restaurant</h2>
+                              <p>Receipt: ${receiptNumber}</p>
+                              <p>Table: ${tableNumber}</p>
+                              <p>Date: ${dateTime}</p>
+                          </div>
+                          <div class="items">
+                              ${orders.map(order => `
+                                  <div class="item-row">
+                                      <span>${order.item_name || 'Item'} x${order.quantity || 1}</span>
+                                      <span>₹${(order.total_price || 0).toFixed(2)}</span>
+                                  </div>
+                              `).join('')}
+                          </div>
 
-                        <div class="totals">
-                            <hr>
-                            <div class="item-row">
-                                <span>Subtotal:</span>
-                                <span>₹${subtotal.toFixed(2)}</span>
-                            </div>
-                            <div class="item-row">
-                                <span>Discount:</span>
-                                <span>-₹${discount.toFixed(2)}</span>
-                            </div>
-                            <div class="item-row">
-                                <span>Tax:</span>
-                                <span>₹${tax.toFixed(2)}</span>
-                            </div>
-                            <div class="item-row">
-                                <span>Service Charge:</span>
-                                <span>₹${serviceCharge.toFixed(2)}</span>
-                            </div>
-                            <div class="item-row total-row">
-                                <span>Total:</span>
-                                <span>₹${finalAmount.toFixed(2)}</span>
-                            </div>
-                        </div>
+                          <div class="totals">
+                              <hr>
+                              <div class="item-row">
+                                  <span>Subtotal:</span>
+                                  <span>₹${subtotal.toFixed(2)}</span>
+                              </div>
+                              <div class="item-row">
+                                  <span>Discount:</span>
+                                  <span>-₹${discount.toFixed(2)}</span>
+                              </div>
+                              <div class="item-row">
+                                  <span>Tax:</span>
+                                  <span>₹${tax.toFixed(2)}</span>
+                              </div>
+                              <div class="item-row">
+                                  <span>Service Charge:</span>
+                                  <span>₹${serviceCharge.toFixed(2)}</span>
+                              </div>
+                              <div class="item-row total-row">
+                                  <span>Total:</span>
+                                  <span>₹${finalAmount.toFixed(2)}</span>
+                              </div>
+                          </div>
 
-                        <div style="text-align: center; margin-top: 20px;">
-                            <p>Thank you for dining with us!</p>
-                            <p>Served by: ${servedBy}</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
+                          <div style="text-align: center; margin-top: 20px;">
+                              <p>Thank you for dining with us!</p>
+                              <p>Served by: ${servedBy}</p>
+                          </div>
+                      </div>
+                  </body>
+                  </html>
+              `;
         } catch (error) {
             console.error('Error generating print content:', error);
             return `
-                <html><body>
-                    <h2>Hotel Management Restaurant</h2>
-                    <p>Error generating bill content</p>
-                    <p>Please try again or contact support</p>
-                </body></html>
-            `;
+                  <html><body>
+                      <h2>Hotel Management Restaurant</h2>
+                      <p>Error generating bill content</p>
+                      <p>Please try again or contact support</p>
+                  </body></html>
+              `;
         }
     };
 
@@ -666,11 +759,10 @@ function TableManagementDashboard() {
                             </h1>
                             <div className="flex items-center space-x-4 mt-2">
                                 {/* Connection Status */}
-                                <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                    isConnected
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                }`}>
+                                <div className={`px-3 py-1 rounded-full text-sm font-medium ${isConnected
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-100 text-red-800'
+                                    }`}>
                                     {isConnected ? 'Connected' : 'Disconnected'}
                                 </div>
                             </div>
@@ -865,8 +957,9 @@ function TableManagementDashboard() {
                                 )}
 
                                 {/* Quick Actions - FIXED to show billing options for tables with served orders */}
-                                {((table.status === 'occupied' && table.active_orders_count > 0) ||
-                                  (table.has_served_orders && table.total_bill_amount > 0)) && (
+
+                                {/* Quick Actions - SIMPLIFIED to show billing options more easily */}
+                                {(table.status === 'occupied' || table.total_bill_amount > 0) && (
                                     <div className="mt-3 pt-3 border-t flex space-x-2">
                                         {/* Admin Manage Orders Button - Only for tables with active orders */}
                                         {user?.role === 'admin' && table.active_orders_count > 0 && (
@@ -882,34 +975,38 @@ function TableManagementDashboard() {
                                             </button>
                                         )}
 
-                                        {/* Billing Button - Show for any table with billable orders */}
-                                        {(table.can_bill || table.total_bill_amount > 0) && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setBillingTable(table);
-                                                    setShowBillModal(true);
-                                                }}
-                                                className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
-                                            >
-                                                💳 Bill
-                                            </button>
-                                        )}
+                                        {/* Billing Button - Show for any occupied table */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setBillingTable(table);
+                                                setShowBillModal(true);
+                                            }}
+                                            className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+                                            title="Generate Bill"
+                                        >
+                                            💳 Bill
+                                        </button>
 
                                         {/* Print Button - Show for any table with orders */}
-                                        {table.total_bill_amount > 0 && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    printBill(table);
-                                                }}
-                                                className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
-                                            >
-                                                🖨️ Print
-                                            </button>
-                                        )}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (table.total_bill_amount > 0) {
+                                                    printCompletedBill(table.table_number, table.table_number);
+                                                } else {
+                                                    toast.error('No bill to print');
+                                                }
+                                            }}
+                                            className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                                            title="Print Bill"
+                                        >
+                                            🖨️ Print
+                                        </button>
+
                                     </div>
                                 )}
+
                             </div>
                         </div>
                     ))}
@@ -1389,27 +1486,28 @@ function TableManagementDashboard() {
                                 )}
                             </div>
 
-                            {/* Order Summary */}
-                            {billingTable.session_orders && billingTable.session_orders.length > 0 && (
-                                <div className="border-t pt-4">
-                                    <h4 className="font-medium mb-3 text-gray-800">Order Summary</h4>
-                                    <div className="max-h-32 overflow-y-auto">
+                            {/* Order Summary - ADD THIS SECTION */}
+                            {billingTable.session_orders && billingTable.session_orders.length > 0 ? (
+                                <div className="mb-4">
+                                    <h4 className="font-semibold mb-2">Order Summary</h4>
+                                    <div className="bg-gray-50 p-3 rounded max-h-40 overflow-y-auto">
                                         {billingTable.session_orders.slice(0, 5).map((order, index) => (
-                                            <div key={index} className="flex justify-between items-center text-sm py-1">
-                                                <span className="text-gray-600">
-                                                    {order.menu_item_name} x{order.quantity}
-                                                </span>
-                                                <span className="font-medium">
-                                                    ₹{parseFloat(order.total_price || 0).toFixed(2)}
-                                                </span>
+                                            <div key={index} className="flex justify-between py-1 border-b">
+                                                <span>{order.menu_item_name} x{order.quantity}</span>
+                                                <span>₹{parseFloat(order.total_price || 0).toFixed(2)}</span>
                                             </div>
                                         ))}
                                         {billingTable.session_orders.length > 5 && (
-                                            <div className="text-xs text-gray-500 mt-1">
+                                            <div className="text-center text-gray-500 mt-2">
                                                 +{billingTable.session_orders.length - 5} more items
                                             </div>
                                         )}
                                     </div>
+                                </div>
+                            ) : (
+                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded">
+                                    <p className="text-red-600">⚠️ No orders found for this table</p>
+                                    <p className="text-sm text-red-500">Please add orders first or check if orders are marked as served.</p>
                                 </div>
                             )}
                         </div>
@@ -1435,7 +1533,26 @@ function TableManagementDashboard() {
                     </div>
                 </div>
             )}
-
+            {/* GST Breakdown - ADD THIS */}
+            {billingTable && billingTable.total_bill_amount > 0 && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <h4 className="font-semibold mb-2">Bill Breakdown</h4>
+                    <div className="text-sm space-y-1">
+                        <div className="flex justify-between">
+                            <span>Subtotal:</span>
+                            <span>₹{(billingTable.total_bill_amount / 1.18).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>GST (18%):</span>
+                            <span>₹{(billingTable.total_bill_amount - billingTable.total_bill_amount / 1.18).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between font-bold border-t pt-1">
+                            <span>Total:</span>
+                            <span>₹{parseFloat(billingTable.total_bill_amount).toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Table Detail Modal */}
             {selectedTable && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1536,21 +1653,138 @@ function TableManagementDashboard() {
                             )}
 
                             {/* Actions */}
-                            <div className="flex space-x-4 pt-4 border-t">
-                                <Link href={`/admin/mobile-ordering?table=${selectedTable.id}`} legacyBehavior>
-                                    <a className="flex-1 px-4 py-2 bg-blue-500 text-white text-center rounded hover:bg-blue-600">
-                                        📱 Add Order
-                                    </a>
-                                </Link>
+                            <div className="flex space-x-3">
+                                <button
+                                    onClick={() => openAddOrderModal(selectedTable)}
+                                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                                >
+                                    📱 Add Order
+                                </button>
                                 <button
                                     onClick={() => setSelectedTable(null)}
-                                    className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
                                 >
                                     Close
                                 </button>
                             </div>
+
                         </div>
                     </div>
+                    {/* Add Order Modal - ADD THIS ENTIRE MODAL */}
+                    {showAddOrderModal && orderingTable && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
+                                <div className="p-4 border-b flex justify-between items-center">
+                                    <h3 className="text-lg font-semibold">Add Order - Table {orderingTable.table_number}</h3>
+                                    <button
+                                        onClick={() => setShowAddOrderModal(false)}
+                                        className="text-gray-500 hover:text-gray-700"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                <div className="p-4">
+                                    {/* Search Bar */}
+                                    <div className="mb-4">
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            placeholder="Search menu items..."
+                                            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                        {/* Menu Items */}
+                                        <div className="flex-1 max-h-96 overflow-y-auto">
+                                            {menuItems.filter(category =>
+                                                category.items.some(item =>
+                                                    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+                                                )
+                                            ).map(category => (
+                                                <div key={category.id} className="mb-4">
+                                                    <h4 className="font-semibold text-gray-700 mb-2">{category.name}</h4>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {category.items
+                                                            .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                                            .map(item => (
+                                                                <div
+                                                                    key={item.id}
+                                                                    onClick={() => addItemToOrder(item)}
+                                                                    className="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer"
+                                                                >
+                                                                    <div className="flex justify-between items-center">
+                                                                        <div>
+                                                                            <h5 className="font-medium">{item.name}</h5>
+                                                                            <p className="text-sm text-gray-600">₹{item.price}</p>
+                                                                        </div>
+                                                                        <button className="px-2 py-1 bg-blue-500 text-white text-xs rounded">
+                                                                            Add
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Selected Items */}
+                                        <div className="w-80 border-l pl-4">
+                                            <h4 className="font-semibold mb-2">Selected Items ({selectedMenuItems.length})</h4>
+                                            <div className="max-h-64 overflow-y-auto">
+                                                {selectedMenuItems.map(item => (
+                                                    <div key={item.id} className="flex justify-between items-center p-2 border-b">
+                                                        <div>
+                                                            <span className="font-medium">{item.name}</span>
+                                                            <div className="text-sm text-gray-600">₹{item.price} x {item.quantity}</div>
+                                                        </div>
+                                                        <div className="flex items-center space-x-2">
+                                                            <button
+                                                                onClick={() => setSelectedMenuItems(prev =>
+                                                                    prev.map(selected =>
+                                                                        selected.id === item.id && selected.quantity > 1
+                                                                            ? { ...selected, quantity: selected.quantity - 1 }
+                                                                            : selected
+                                                                    )
+                                                                )}
+                                                                className="px-2 py-1 bg-gray-200 text-xs rounded"
+                                                            >
+                                                                -
+                                                            </button>
+                                                            <span>{item.quantity}</span>
+                                                            <button
+                                                                onClick={() => addItemToOrder(item)}
+                                                                className="px-2 py-1 bg-gray-200 text-xs rounded"
+                                                            >
+                                                                +
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {selectedMenuItems.length > 0 && (
+                                                <div className="mt-4">
+                                                    <div className="text-lg font-semibold">
+                                                        Total: ₹{selectedMenuItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+                                                    </div>
+                                                    <button
+                                                        onClick={placeOrderForTable}
+                                                        className="w-full mt-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                                                    >
+                                                        Place Order
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1566,3 +1800,4 @@ function TableManagementDashboard() {
 }
 
 export default withRoleGuard(TableManagementDashboard, ['admin', 'manager']);
+
