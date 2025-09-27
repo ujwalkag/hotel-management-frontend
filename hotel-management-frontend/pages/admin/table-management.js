@@ -24,13 +24,13 @@ const BillingOrdersSection = ({ tableId }) => {
     try {
       setLoading(true);
       console.log(`🔍 Loading orders for table ID: ${tableId}`);
-      
+
       const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${tableId}/manage_orders/`);
-      
+
       if (response && response.ok) {
         const data = await response.json();
         console.log('🔍 Billing orders response:', data);
-        
+
         setOrders(data.orders || []);
         setTotalAmount(data.total_amount || 0);
       } else {
@@ -80,7 +80,7 @@ const BillingOrdersSection = ({ tableId }) => {
       {/* Order Summary */}
       <div className="bg-gray-50 rounded-lg p-4 mb-4">
         <h3 className="text-lg font-semibold mb-3">📋 Order Summary ({orders.length} items)</h3>
-        
+
         <div className="space-y-2 mb-4">
           {orders.map((order, index) => (
             <div key={`billing-order-${order.id}-${index}`} className="flex justify-between items-center py-2 border-b border-gray-200">
@@ -90,12 +90,11 @@ const BillingOrdersSection = ({ tableId }) => {
                 </div>
                 <div className="text-sm text-gray-600 flex items-center space-x-2">
                   <span>x{order.quantity}</span>
-                  <span className={`px-2 py-1 rounded text-xs ${
-                    order.status === 'served' ? 'bg-green-100 text-green-800' :
+                  <span className={`px-2 py-1 rounded text-xs ${order.status === 'served' ? 'bg-green-100 text-green-800' :
                     order.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                    order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                      order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                    }`}>
                     {order.status}
                   </span>
                   {order.special_instructions && (
@@ -116,7 +115,7 @@ const BillingOrdersSection = ({ tableId }) => {
             </div>
           ))}
         </div>
-        
+
         {/* Total Display */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
           <div className="text-3xl font-bold text-blue-900">
@@ -318,45 +317,45 @@ function TableManagementDashboard() {
       if (tablesRes.ok) {
         const payload = await tablesRes.json();
         console.log('🔍 Raw API response:', payload);
-        
+
         // Extract the tables array (handle different response formats)
         const raw = Array.isArray(payload) ? payload : payload.tables || [];
-        
+
         // FIXED: Map with proper field extraction for new API structure
         const formatted = raw.map(tbl => {
           // Use current_bill_amount and session_info from the actual API
           const sessionInfo = tbl.session_info || {};
           const currentBillAmount = tbl.current_bill_amount || 0;
           const hasOrders = sessionInfo.order_count > 0 || currentBillAmount > 0;
-          
+
           console.log(`Table ${tbl.table_number}:`, {
             sessionInfo,
             currentBillAmount,
             hasOrders
           });
-          
+
           return {
             ...tbl,
             // Active orders (for kitchen display)
             active_orders: tbl.active_orders || [],
             active_orders_count: tbl.active_orders_count || 0,
-            
+
             // Billing information (mapped from actual API fields)
             session_orders_count: sessionInfo.order_count || 0,
             total_bill_amount: currentBillAmount,
             can_bill: hasOrders,
             has_served_orders: hasOrders,
-            
+
             // Frontend display flags
             show_billing_options: hasOrders,
             is_billable: hasOrders,
             billing_ready: hasOrders,
-            
+
             // Duration calculation
             time_occupied: tbl.occupancy_duration || 0
           };
         });
-        
+
         console.log('🔍 Formatted tables with billing data:', formatted);
         setTables(formatted);
       } else {
@@ -538,14 +537,14 @@ function TableManagementDashboard() {
         setTables(prev => prev.map(table =>
           table.id === billingTable.id
             ? {
-                ...table,
-                status: 'free',
-                active_orders_count: 0,
-                session_orders_count: 0,
-                total_bill_amount: 0,
-                can_bill: false,
-                has_served_orders: false
-              }
+              ...table,
+              status: 'free',
+              active_orders_count: 0,
+              session_orders_count: 0,
+              total_bill_amount: 0,
+              can_bill: false,
+              has_served_orders: false
+            }
             : table
         ));
 
@@ -564,8 +563,41 @@ function TableManagementDashboard() {
 
         loadInitialData();
 
-        if (confirm('Billing completed! Would you like to print the bill?')) {
-          printCompletedBill(result.receipt_number, billingTable.table_number);
+        // Ask for print with enhanced details
+        if (confirm('Billing completed! Would you like to print the detailed bill?')) {
+          // Get the orders for detailed printing
+          // CORRECT - Get only session orders for this table
+          let sessionOrders = [];
+
+          // Use the session orders from current table billing data
+          if (billingTable.session_orders) {
+            sessionOrders = billingTable.session_orders;
+          } else if (billingTable.active_orders) {
+            // Fallback to active orders
+            sessionOrders = billingTable.active_orders;
+          } else {
+            // Last resort: get session orders from API
+            try {
+              const sessionResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/session_orders/`);
+              if (sessionResponse && sessionResponse.ok) {
+                const sessionData = await sessionResponse.json();
+                sessionOrders = sessionData.orders || [];
+              }
+            } catch (error) {
+              console.error('Could not get session orders:', error);
+              sessionOrders = []; // Empty fallback
+            }
+          }
+
+          console.log('🧾 Printing orders for table:', sessionOrders);
+
+          // Ask for print with CORRECT orders
+          if (confirm('Billing completed! Would you like to print the detailed bill?')) {
+            await printDetailedBill(result, billingTable.table_number, sessionOrders);
+          }
+
+
+          await printDetailedBill(result, billingTable.table_number, orders);
         }
       } else {
         const error = await response.json();
@@ -655,43 +687,263 @@ function TableManagementDashboard() {
     }
   };
 
-  const printCompletedBill = async (receiptNumber, tableNumber) => {
+  // Enhanced Bill Printing Function - COMPLETE REPLACEMENT
+  const printDetailedBill = async (session, tableNumber, orders) => {
     try {
+      // Get current date and time
+      const now = new Date();
+      const billDate = now.toLocaleDateString('en-IN');
+      const billTime = now.toLocaleTimeString('en-IN');
+
+      // Calculate totals
+      const subtotal = orders.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0);
+      const discountAmount = parseFloat(session.discount_amount || 0);
+      const serviceCharge = parseFloat(session.service_charge || 0);
+      const taxableAmount = subtotal - discountAmount;
+
+      // GST Calculation (18% for restaurants in India)
+      const gstRate = 18;
+      const gstAmount = (taxableAmount * gstRate) / 100;
+      const cgstAmount = gstAmount / 2;
+      const sgstAmount = gstAmount / 2;
+      const finalTotal = taxableAmount + gstAmount + serviceCharge;
+
       const printContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Bill Receipt - ${receiptNumber}</title>
-          <style>
-            body { font-family: monospace; text-align: center; }
-            h1 { margin: 20px 0; }
-            .receipt-details { margin: 10px 0; }
-          </style>
-        </head>
-        <body>
-          <h1>Hotel Restaurant</h1>
-          <hr>
-          <div class="receipt-details">Receipt: ${receiptNumber}</div>
-          <div class="receipt-details">Table: ${tableNumber}</div>
-          <div class="receipt-details">Date: ${new Date().toLocaleDateString('en-IN')}</div>
-          <div class="receipt-details">Time: ${new Date().toLocaleTimeString('en-IN')}</div>
-          <hr>
-          <h2><strong>PAID</strong></h2>
-          <p>Thank you for dining with us!</p>
-          <p>Visit again soon!</p>
-        </body>
-        </html>
-      `;
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Bill Receipt - ${session.receipt_number || 'BILL'}</title>
+        <style>
+          body {
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          .bill-container {
+            max-width: 300px;
+            margin: 0 auto;
+            border: 1px solid #000;
+            padding: 10px;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+          }
+          .hotel-name {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+          }
+          .bill-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin: 10px 0;
+          }
+          .divider {
+            border-bottom: 1px dashed #000;
+            margin: 10px 0;
+          }
+          .row {
+            display: flex;
+            justify-content: space-between;
+            margin: 3px 0;
+          }
+          .item-row {
+            margin: 5px 0;
+            padding: 3px 0;
+          }
+          .item-name {
+            font-weight: bold;
+          }
+          .item-details {
+            font-size: 11px;
+            color: #666;
+            margin-left: 10px;
+          }
+          .total-section {
+            border-top: 1px solid #000;
+            margin-top: 10px;
+            padding-top: 10px;
+          }
+          .grand-total {
+            font-size: 14px;
+            font-weight: bold;
+            border-top: 2px solid #000;
+            border-bottom: 2px solid #000;
+            padding: 5px 0;
+            margin: 5px 0;
+          }
+          .footer {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 11px;
+          }
+          .gst-section {
+            background: #f9f9f9;
+            padding: 5px;
+            margin: 5px 0;
+          }
+          @media print {
+            body { margin: 0; padding: 0; }
+            .bill-container { border: none; max-width: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="bill-container">
+          <!-- Header Section -->
+          <div class="header">
+            <div class="hotel-name">HOTEL RESTAURANT</div>
+            <div>Complete Dining Experience</div>
+            <div style="font-size: 10px; margin-top: 5px;">
+              GSTIN: 27ABCDE1234F1Z5 | FSSAI: 12345678901234
+            </div>
+          </div>
+
+          <!-- Bill Details -->
+          <div class="bill-title">TAX INVOICE</div>
+
+          <div class="row">
+            <span>Receipt #:</span>
+            <span><strong>${session.receipt_number || 'N/A'}</strong></span>
+          </div>
+          <div class="row">
+            <span>Table:</span>
+            <span><strong>${tableNumber}</strong></span>
+          </div>
+          <div class="row">
+            <span>Date:</span>
+            <span>${billDate}</span>
+          </div>
+          <div class="row">
+            <span>Time:</span>
+            <span>${billTime}</span>
+          </div>
+
+          <!-- Customer Details -->
+          <div class="divider"></div>
+          <div><strong>Customer Details:</strong></div>
+          <div class="row">
+            <span>Name:</span>
+            <span>${billingData?.customer_name || session?.customer_name || 'Guest'}</span>
+          </div>
+          ${(billingData?.customer_phone || session?.customer_phone) ? `
+          <div class="row">
+            <span>Phone:</span>
+            <span>${billingData.customer_phone || session.customer_phone}</span>
+          </div>` : ''}
+
+          <!-- Order Details -->
+          <div class="divider"></div>
+          <div><strong>Order Details:</strong></div>
+
+          ${orders.map(order => `
+            <div class="item-row">
+              <div class="item-name">${order.menu_item_name}</div>
+              <div class="item-details">
+                ${order.quantity} x ₹${parseFloat(order.unit_price || 0).toFixed(2)} = ₹${parseFloat(order.total_price || 0).toFixed(2)}
+              </div>
+              ${order.special_instructions ? `
+              <div class="item-details" style="font-style: italic;">
+                Note: ${order.special_instructions}
+              </div>` : ''}
+            </div>
+          `).join('')}
+
+          <!-- Billing Summary -->
+          <div class="total-section">
+            <div class="row">
+              <span>Subtotal (${orders.length} items):</span>
+              <span>₹${subtotal.toFixed(2)}</span>
+            </div>
+
+            ${discountAmount > 0 ? `
+            <div class="row">
+              <span>Discount:</span>
+              <span>-₹${discountAmount.toFixed(2)}</span>
+            </div>` : ''}
+
+            <div class="row">
+              <span>Taxable Amount:</span>
+              <span>₹${taxableAmount.toFixed(2)}</span>
+            </div>
+
+            <!-- GST Breakdown -->
+            <div class="gst-section">
+              <div><strong>GST Breakdown (${gstRate}%):</strong></div>
+              <div class="row">
+                <span>CGST (${gstRate / 2}%):</span>
+                <span>₹${cgstAmount.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>SGST (${gstRate / 2}%):</span>
+                <span>₹${sgstAmount.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>Total GST:</span>
+                <span>₹${gstAmount.toFixed(2)}</span>
+              </div>
+            </div>
+
+            ${serviceCharge > 0 ? `
+            <div class="row">
+              <span>Service Charge:</span>
+              <span>₹${serviceCharge.toFixed(2)}</span>
+            </div>` : ''}
+
+            <div class="grand-total row">
+              <span>TOTAL AMOUNT:</span>
+              <span>₹${finalTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <!-- Payment Details -->
+          <div class="divider"></div>
+          <div class="row">
+            <span>Payment Mode:</span>
+            <span><strong>${(billingData?.payment_method || session?.payment_method || 'cash').toUpperCase()}</strong></span>
+          </div>
+          <div style="text-align: center; margin: 10px 0;">
+            <strong>PAID</strong>
+          </div>
+
+          ${(billingData?.notes || session?.notes) ? `
+          <div class="divider"></div>
+          <div><strong>Notes:</strong></div>
+          <div style="font-size: 11px;">${billingData.notes || session.notes}</div>
+          ` : ''}
+
+          <!-- Footer -->
+          <div class="footer">
+            <div>Thank you for dining with us!</div>
+            <div>Visit again soon!</div>
+            <div style="margin-top: 10px; font-size: 10px;">
+              Generated by: ${user?.email || 'System'} | ${billTime}
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
 
       const printWindow = window.open('', '_blank');
       printWindow.document.write(printContent);
       printWindow.document.close();
-      printWindow.print();
-      printWindow.close();
-      toast.success('✅ Bill sent to printer');
+
+      // Auto-print after a short delay
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 500);
+
+      toast.success('✅ Detailed bill sent to printer');
     } catch (error) {
-      console.error('Error printing bill:', error);
-      toast.error('❌ Failed to print bill');
+      console.error('Error printing detailed bill:', error);
+      toast.error('❌ Failed to print detailed bill');
     }
   };
 
@@ -757,16 +1009,15 @@ function TableManagementDashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-gray-900">🏪 Table Management Dashboard</h1>
-            
+
             <div className="flex items-center space-x-4">
-              <span className={`px-3 py-1 rounded-full text-sm ${
-                isConnected 
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-red-100 text-red-800'
-              }`}>
+              <span className={`px-3 py-1 rounded-full text-sm ${isConnected
+                ? 'bg-green-100 text-green-800'
+                : 'bg-red-100 text-red-800'
+                }`}>
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
-              
+
               <div className="flex space-x-2">
                 {canCreateTables && (
                   <button
@@ -776,21 +1027,21 @@ function TableManagementDashboard() {
                     + Add Table
                   </button>
                 )}
-                
+
                 <Link
                   href="/admin/mobile-ordering"
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   📱 Mobile Ordering
                 </Link>
-                
+
                 <Link
                   href="/admin/kitchen-display"
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                 >
                   🍳 Kitchen Display
                 </Link>
-                
+
                 <button
                   onClick={loadInitialData}
                   disabled={refreshing}
@@ -819,7 +1070,7 @@ function TableManagementDashboard() {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
@@ -831,7 +1082,7 @@ function TableManagementDashboard() {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
@@ -843,7 +1094,7 @@ function TableManagementDashboard() {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
@@ -926,12 +1177,11 @@ function TableManagementDashboard() {
                     {table.active_orders.slice(0, 3).map((order, index) => (
                       <div key={index} className="text-xs text-gray-600">
                         <span className="font-medium">{order.menu_item_name} x{order.quantity}</span>
-                        <span className={`ml-2 px-2 py-1 rounded ${
-                          order.status === 'pending' ? 'bg-orange-100 text-orange-600' :
+                        <span className={`ml-2 px-2 py-1 rounded ${order.status === 'pending' ? 'bg-orange-100 text-orange-600' :
                           order.status === 'preparing' ? 'bg-blue-100 text-blue-600' :
-                          order.status === 'ready' ? 'bg-green-100 text-green-600' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
+                            order.status === 'ready' ? 'bg-green-100 text-green-600' :
+                              'bg-gray-100 text-gray-600'
+                          }`}>
                           {order.status}
                         </span>
                       </div>
@@ -979,7 +1229,7 @@ function TableManagementDashboard() {
                         🔧 Manage
                       </button>
                     )}
-                    
+
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -989,7 +1239,7 @@ function TableManagementDashboard() {
                     >
                       + Order
                     </button>
-                    
+
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1030,7 +1280,7 @@ function TableManagementDashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h2 className="text-xl font-bold mb-4">Create New Table</h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Table Number *</label>
@@ -1046,7 +1296,7 @@ function TableManagementDashboard() {
                   placeholder="e.g., T1, A1, VIP1"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Capacity *</label>
                 <input
@@ -1062,7 +1312,7 @@ function TableManagementDashboard() {
                   className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
                 <input
@@ -1076,7 +1326,7 @@ function TableManagementDashboard() {
                   placeholder="e.g., Main Hall, Terrace, VIP Section"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Initial Status</label>
                 <select
@@ -1093,7 +1343,7 @@ function TableManagementDashboard() {
                   <option value="maintenance">Maintenance</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea
@@ -1108,7 +1358,7 @@ function TableManagementDashboard() {
                 />
               </div>
             </div>
-            
+
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={() => {
@@ -1142,7 +1392,7 @@ function TableManagementDashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h2 className="text-xl font-bold mb-4">Edit Table {editingTable.table_number}</h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Table Number *</label>
@@ -1157,7 +1407,7 @@ function TableManagementDashboard() {
                   className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Capacity *</label>
                 <input
@@ -1173,7 +1423,7 @@ function TableManagementDashboard() {
                   className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
                 <input
@@ -1186,7 +1436,7 @@ function TableManagementDashboard() {
                   className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select
@@ -1210,7 +1460,7 @@ function TableManagementDashboard() {
                   </p>
                 )}
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea
@@ -1224,7 +1474,7 @@ function TableManagementDashboard() {
                 />
               </div>
             </div>
-            
+
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={() => {
@@ -1251,13 +1501,13 @@ function TableManagementDashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h2 className="text-xl font-bold mb-4">Delete Table</h2>
-            
+
             <div className="mb-4">
               <div className="flex items-center mb-3">
                 <span className="text-2xl mr-3">⚠️</span>
                 <p>Are you sure you want to delete <strong>Table {deletingTable.table_number}</strong>?</p>
               </div>
-              
+
               <p className="text-sm text-gray-600 mb-4">
                 This action cannot be undone. The table will be permanently removed from the system.
               </p>
@@ -1278,7 +1528,7 @@ function TableManagementDashboard() {
                 </div>
               )}
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={() => {
@@ -1306,10 +1556,10 @@ function TableManagementDashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-screen overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">💳 Complete Billing - Table {billingTable.table_number}</h2>
-            
+
             {/* Use the dedicated billing orders component */}
             <BillingOrdersSection tableId={billingTable.id} />
-            
+
             {/* Customer Details Form */}
             <div className="mb-6">
               <h3 className="text-lg font-semibold mb-3">Customer Information</h3>
@@ -1328,7 +1578,7 @@ function TableManagementDashboard() {
                     placeholder="Enter customer name"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number (Optional)</label>
                   <input
@@ -1363,7 +1613,7 @@ function TableManagementDashboard() {
                     className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Discount Percentage (%)</label>
                   <input
@@ -1379,7 +1629,7 @@ function TableManagementDashboard() {
                     className="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Charge (₹)</label>
                   <input
@@ -1432,7 +1682,7 @@ function TableManagementDashboard() {
                     placeholder="Optional notes for customer"
                   />
                 </div>
-                
+
                 {user?.role === 'admin' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Admin Notes (Internal)</label>
@@ -1450,7 +1700,7 @@ function TableManagementDashboard() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={() => {
@@ -1485,28 +1735,28 @@ function TableManagementDashboard() {
                 ✕
               </button>
             </div>
-            
+
             {/* Table Info */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Capacity</label>
                 <p className="text-lg">{selectedTable.capacity} people</p>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">Status</label>
                 <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTableStatusColor(selectedTable.status)}`}>
                   {getTableStatusIcon(selectedTable.status)} {selectedTable.status.charAt(0).toUpperCase() + selectedTable.status.slice(1)}
                 </div>
               </div>
-              
+
               {selectedTable.location && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Location</label>
                   <p className="text-lg">{selectedTable.location}</p>
                 </div>
               )}
-              
+
               {selectedTable.time_occupied > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Occupied Time</label>
@@ -1589,7 +1839,7 @@ function TableManagementDashboard() {
                 ✕
               </button>
             </div>
-            
+
             {/* Search Bar */}
             <div className="mb-6">
               <input
@@ -1606,8 +1856,8 @@ function TableManagementDashboard() {
               {menuItems.length === 0 ? (
                 <div className="text-center py-8">Loading menu items...</div>
               ) : (
-                menuItems.filter(category => 
-                  category.items && category.items.some(item => 
+                menuItems.filter(category =>
+                  category.items && category.items.some(item =>
                     item.name.toLowerCase().includes(searchQuery.toLowerCase())
                   )
                 ).map(category => (
@@ -1660,7 +1910,7 @@ function TableManagementDashboard() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={() => setShowAddOrderModal(false)}
@@ -1692,3 +1942,4 @@ function TableManagementDashboard() {
 }
 
 export default withRoleGuard(TableManagementDashboard, ['admin', 'manager']);
+

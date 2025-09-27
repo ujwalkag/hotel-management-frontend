@@ -146,7 +146,7 @@ export const AuthProvider = ({ children }) => {
 const makeAuthenticatedRequest = async (url, options = {}) => {
   try {
     const token = localStorage.getItem('access_token');
-    
+
     if (!token) {
       console.warn('No access token found, redirecting to login');
       router.push('/login');
@@ -290,9 +290,9 @@ const makeAuthenticatedRequest = async (url, options = {}) => {
       case 'admin':
         return '/admin/dashboard';
       case 'staff':
-        return '/staff/dashbaord';
+        return '/staff/dashboard';
       case 'waiter':
-        return '/staff/';
+        return '/waiter/dashboard';
       case 'biller':
         return '/staff/';
       default:
@@ -355,4 +355,3 @@ export const useAuth = () => {
 };
 
 export default AuthContext;
-
