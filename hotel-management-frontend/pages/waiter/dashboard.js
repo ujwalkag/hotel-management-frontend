@@ -34,11 +34,18 @@ function WaiterDashboard() {
       if (tablesRes && tablesRes.ok) {
         const tablesData = await tablesRes.json();
         // Filter tables that have orders created by this waiter or are currently occupied
-        const myTables = tablesData.tables.filter(table => 
-          table.status === 'occupied' || 
-          table.active_orders.some(order => order.created_by_name === user?.get_full_name?.() || user?.email)
-        );
-        
+        // Safe parsing with fallbacks
+        const tablesArray = tablesData?.tables || tablesData || [];
+        const myTables = Array.isArray(tablesArray) ? tablesArray.filter(table =>
+          table?.status === 'occupied' ||
+          (table?.active_orders && Array.isArray(table.active_orders) &&
+            table.active_orders.some(order =>
+              order?.created_by_name === user?.get_full_name?.() ||
+              order?.created_by_name === user?.email
+            ))
+        ) : [];
+        ;
+
         setDashboardData(prev => ({
           ...prev,
           myTables: myTables
@@ -108,8 +115,8 @@ function WaiterDashboard() {
               </p>
             </div>
             <div className="flex items-center space-x-2">
-              <Link 
-                href="/waiter/dashboard" 
+              <Link
+                href="/waiter/dashboard"
                 className="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg flex items-center text-sm font-bold transition-all animate-pulse"
               >
                 🏠 HOME
@@ -130,7 +137,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-green-500">
             <div className="flex items-center">
               <div className="text-2xl text-green-600 mr-4">📝</div>
@@ -140,7 +147,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-orange-500">
             <div className="flex items-center">
               <div className="text-2xl text-orange-600 mr-4">⏳</div>
@@ -150,7 +157,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-purple-500">
             <div className="flex items-center">
               <div className="text-2xl text-purple-600 mr-4">✅</div>
@@ -173,7 +180,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </Link>
-          
+
           <Link href="/waiter/take-orders" className="group">
             <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-lg transition-all duration-200 border-2 border-transparent hover:border-purple-200 group-hover:scale-105">
               <div className="text-center">
@@ -183,7 +190,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </Link>
-          
+
           <Link href="/waiter/my-tables" className="group">
             <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-lg transition-all duration-200 border-2 border-transparent hover:border-blue-200 group-hover:scale-105">
               <div className="text-center">
@@ -193,7 +200,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </Link>
-          
+
           <Link href="/waiter/order-status" className="group">
             <div className="bg-white rounded-lg p-6 shadow-md hover:shadow-lg transition-all duration-200 border-2 border-transparent hover:border-green-200 group-hover:scale-105">
               <div className="text-center">
@@ -211,13 +218,13 @@ function WaiterDashboard() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">My Tables Overview</h2>
               <div className="flex items-center space-x-2">
-                <Link 
+                <Link
                   href="/waiter/dashboard"
                   className="text-purple-600 hover:text-purple-800 text-sm font-medium bg-purple-50 px-3 py-1 rounded-full"
                 >
                   🏠 HOME
                 </Link>
-                <Link 
+                <Link
                   href="/waiter/my-tables"
                   className="text-purple-600 hover:text-purple-800 text-sm font-medium"
                 >
@@ -226,7 +233,7 @@ function WaiterDashboard() {
               </div>
             </div>
           </div>
-          
+
           <div className="p-6">
             {dashboardData.myTables.length === 0 ? (
               <div className="text-center py-8">
@@ -234,13 +241,13 @@ function WaiterDashboard() {
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No Tables Assigned</h3>
                 <p className="text-gray-500 mb-4">You don't have any tables currently assigned or occupied.</p>
                 <div className="flex justify-center space-x-3">
-                  <Link 
+                  <Link
                     href="/waiter/dashboard"
                     className="inline-flex items-center px-4 py-2 border border-purple-300 text-sm font-medium rounded-md text-purple-700 bg-white hover:bg-purple-50"
                   >
                     🏠 HOME
                   </Link>
-                  <Link 
+                  <Link
                     href="/waiter/take-orders"
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
                   >
@@ -252,17 +259,16 @@ function WaiterDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {dashboardData.myTables.slice(0, 6).map(table => (
                   <div key={table.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-[O                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold text-gray-900">Table {table.table_number}</h3>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        table.status === 'occupied' 
-                          ? 'bg-red-100 text-red-800' 
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${table.status === 'occupied'
+                          ? 'bg-red-100 text-red-800'
                           : 'bg-green-100 text-green-800'
-                      }`}>
+                        }`}>
                         {getTableStatusIcon(table.status)} {table.status}
                       </span>
                     </div>
-                    
+
                     <div className="space-y-2 text-sm text-gray-600">
                       <div className="flex justify-between">
                         <span>Capacity:</span>
@@ -279,9 +285,9 @@ function WaiterDashboard() {
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="mt-4 flex space-x-2">
-                      <Link 
+                      <Link
                         href={`/waiter/take-orders?table=${table.id}`}
                         className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-xs text-center"
                       >
@@ -300,3 +306,5 @@ function WaiterDashboard() {
 }
 
 export default withRoleGuard(WaiterDashboard, ['waiter']);
+
+

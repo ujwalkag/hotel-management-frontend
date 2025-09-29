@@ -23,13 +23,15 @@ function MyTables() {
       if (response && response.ok) {
         const data = await response.json();
         // Filter tables that have orders by this waiter or are currently occupied
-        const myTables = data.tables.filter(table => 
-          table.status === 'occupied' || 
-          table.active_orders.some(order => 
-            order.created_by_name === user?.get_full_name?.() || 
-            order.created_by_name === user?.email
-          )
-        );
+        const tablesArray = data?.tables || data || [];
+        const myTables = Array.isArray(tablesArray) ? tablesArray.filter(table =>
+          table?.status === 'occupied' ||
+          (table?.active_orders && Array.isArray(table.active_orders) &&
+            table.active_orders.some(order =>
+              order?.created_by_name === user?.get_full_name?.() ||
+              order?.created_by_name === user?.email
+            ))
+        ) : [];
         setTables(myTables);
       }
     } catch (error) {
@@ -54,7 +56,7 @@ function MyTables() {
   const getStatusIcon = (status) => {
     const icons = {
       free: '✅',
-      occupied: '👥', 
+      occupied: '👥',
       reserved: '📅',
       cleaning: '🧹',
       maintenance: '🔧'
@@ -146,26 +148,26 @@ function MyTables() {
                       <span className="text-gray-600">Capacity:</span>
                       <span className="font-medium">{table.capacity} people</span>
                     </div>
-                    
+
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Active Orders:</span>
                       <span className="font-medium">{table.active_orders_count || 0}</span>
                     </div>
-                    
+
                     {table.location && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Location:</span>
                         <span className="font-medium">📍 {table.location}</span>
                       </div>
                     )}
-                    
+
                     {table.total_bill_amount > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Bill Amount:</span>
                         <span className="font-bold text-green-600">₹{table.total_bill_amount.toFixed(2)}</span>
                       </div>
                     )}
-                    
+
                     {table.time_occupied > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Occupied for:</span>
@@ -185,12 +187,11 @@ function MyTables() {
                         {table.active_orders.slice(0, 3).map((order, index) => (
                           <div key={index} className="flex justify-between items-center text-xs bg-gray-50 px-2 py-1 rounded">
                             <span>{order.menu_item_name} x{order.quantity}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs ${
-                              order.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                              order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                              order.status === 'ready' ? 'bg-green-100 text-green-700' :
-                              'bg-gray-100 text-gray-700'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-xs ${order.status === 'pending' ? 'bg-orange-100 text-orange-700' :
+                                order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
+                                  order.status === 'ready' ? 'bg-green-100 text-green-700' :
+                                    'bg-gray-100 text-gray-700'
+                              }`}>
                               {order.status}
                             </span>
                           </div>
@@ -236,3 +237,5 @@ function MyTables() {
 }
 
 export default withRoleGuard(MyTables, ['waiter']);
+
+
