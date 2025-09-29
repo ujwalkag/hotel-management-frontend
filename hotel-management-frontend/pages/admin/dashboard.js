@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import withRoleGuard from "@/hoc/withRoleGuard";
 import Link from "next/link";
+import { 
+  AdminAdvanceBookingWidget,
+  AdvanceBookingSummaryCard 
+} from '@/components/AdvanceBookingWidgets';
+
 
 function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -123,6 +128,10 @@ function AdminDashboard() {
         <>
           {summary && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+		<AdvanceBookingSummaryCard />
+
+		<AdminAdvanceBookingWidget />
+
               <StatCard label="Today's Sales" value={summary.today_sales} />
               <StatCard label="Weekly Sales" value={summary.week_sales} />
               <StatCard label="Monthly Sales" value={summary.month_sales} />

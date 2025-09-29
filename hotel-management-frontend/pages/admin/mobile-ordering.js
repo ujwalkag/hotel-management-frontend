@@ -1,12 +1,12 @@
-// pages/admin/mobile-ordering.js - COMPLETE FIXED WITH AUTHENTICATION
+// pages/admin/mobile-ordering.js - COMPLETE FIXED VERSION
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
 import toast from 'react-hot-toast';
-import Link from 'next/link';  
+import Link from 'next/link';
 
 function MobileOrderingInterface() {
-  // CRITICAL FIX: Use makeAuthenticatedRequest from auth context
+  // Use makeAuthenticatedRequest from auth context
   const { user, makeAuthenticatedRequest } = useAuth();
   const [tables, setTables] = useState([]);
   const [menuCategories, setMenuCategories] = useState([]);
@@ -17,6 +17,7 @@ function MobileOrderingInterface() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef(null);
   const heartbeatInterval = useRef(null);
@@ -47,7 +48,7 @@ function MobileOrderingInterface() {
         setIsConnected(true);
         console.log('✅ Ordering WebSocket connected');
         toast.success('Connected to ordering system');
-        
+
         // Send heartbeat every 30 seconds
         heartbeatInterval.current = setInterval(() => {
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -59,12 +60,12 @@ function MobileOrderingInterface() {
       wsRef.current.onclose = () => {
         setIsConnected(false);
         console.log('❌ Ordering WebSocket disconnected');
-        
+
         // Clear heartbeat
         if (heartbeatInterval.current) {
           clearInterval(heartbeatInterval.current);
         }
-        
+
         // Attempt to reconnect after 3 seconds
         setTimeout(connectWebSocket, 3000);
       };
@@ -86,7 +87,7 @@ function MobileOrderingInterface() {
 
   const handleWebSocketMessage = (data) => {
     console.log('📨 WebSocket message received:', data);
-    
+
     switch (data.type) {
       case 'initial_ordering_data':
         if (data.tables) setTables(data.tables);
@@ -111,21 +112,21 @@ function MobileOrderingInterface() {
       case 'heartbeat_ack':
         // Heartbeat acknowledged
         break;
-        
+
       default:
         console.log('Unknown message type:', data.type);
     }
   };
 
-  // CRITICAL FIX: Use authenticated requests
+  // Use authenticated requests
   const loadInitialData = async () => {
     try {
-      setIsLoading(true);
+      setRefreshing(true);
 
       // Load tables with proper authentication
       try {
         const tablesResponse = await makeAuthenticatedRequest('/api/restaurant/tables/');
-        
+
         if (tablesResponse.ok) {
           const tablesData = await tablesResponse.json();
           setTables(tablesData);
@@ -141,11 +142,11 @@ function MobileOrderingInterface() {
       // Load menu with proper authentication
       try {
         const restaurantMenuResponse = await makeAuthenticatedRequest('/api/restaurant/menu-for-ordering/');
-        
+
         if (restaurantMenuResponse.ok) {
           const restaurantMenuData = await restaurantMenuResponse.json();
           console.log('📋 Restaurant menu data:', restaurantMenuData);
-          
+
           if (restaurantMenuData && restaurantMenuData.length > 0) {
             // Extract categories and items from restaurant API response
             const categories = restaurantMenuData.map(categoryData => ({
@@ -154,14 +155,14 @@ function MobileOrderingInterface() {
               description: categoryData.description,
               icon: categoryData.icon || '🍽️'
             }));
-            
-            const allItems = restaurantMenuData.flatMap(categoryData => 
+
+            const allItems = restaurantMenuData.flatMap(categoryData =>
               categoryData.items.map(item => ({
                 ...item,
                 category_id: categoryData.id
               }))
             );
-            
+
             setMenuCategories(categories);
             setMenuItems(allItems);
             if (categories.length > 0) {
@@ -184,11 +185,11 @@ function MobileOrderingInterface() {
       console.error('❌ Error loading data:', error);
       toast.error('Failed to load menu data. Please refresh the page.');
     } finally {
-      setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // CRITICAL FIX: Use authenticated requests in fallback
+  // Use authenticated requests in fallback
   const loadFallbackMenu = async () => {
     try {
       const [menuCategoriesResponse, menuItemsResponse] = await Promise.all([
@@ -212,7 +213,7 @@ function MobileOrderingInterface() {
         const itemsData = await menuItemsResponse.json();
         const items = Array.isArray(itemsData) ? itemsData : itemsData.results || [];
         // Filter only available items
-        const availableItems = items.filter(item => 
+        const availableItems = items.filter(item =>
           item.available !== false && item.availability !== 'out_of_stock'
         );
         setMenuItems(availableItems);
@@ -270,7 +271,7 @@ function MobileOrderingInterface() {
     }, 0);
   };
 
-  // CRITICAL FIX: Use authenticated request for order submission
+  // Use authenticated request for order submission
   const submitOrder = async () => {
     if (!selectedTable || cart.length === 0) {
       toast.error('❌ Please select a table and add items to cart');
@@ -284,7 +285,7 @@ function MobileOrderingInterface() {
       const orderData = {
         table: selectedTable.id,
         orders: cart.map(item => ({
-          menu_item_id: item.menu_item.id,  // Use menu_item_id
+          menu_item_id: item.menu_item.id,
           quantity: item.quantity,
           special_instructions: item.special_instructions || '',
           priority: item.priority || 'normal'
@@ -301,7 +302,7 @@ function MobileOrderingInterface() {
       if (response.ok) {
         const result = await response.json();
         console.log('✅ Order submitted successfully:', result);
-        
+
         toast.success(
           `🎉 Order placed successfully!\n` +
           `${result.orders?.length || cart.length} items ordered for Table ${selectedTable.table_number}\n` +
@@ -399,34 +400,59 @@ function MobileOrderingInterface() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-	  {/* Navigation Buttons - ADD THIS */}
-<div className="flex space-x-2">
-    <Link
-        href="/admin/table-management"
-        className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center"
-    >
-        🏪 Table Management
-    </Link>
-    <Link
-        href="/admin/kitchen-display"
-        className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center"
-    >
-        🍳 Kitchen Display
-    </Link>
-     <button
-    onClick={loadInitialData}  // ← CORRECT FUNCTION
-    className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center"
-    disabled={isLoading}
->
-    🔄 {isLoading ? 'Refreshing...' : 'Refresh'}
-</button>
+      {/* UNIFIED HEADER WITH HOME BUTTON */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">📱 Mobile Ordering</h1>
+            
+            <div className="flex items-center space-x-4">
+              {/* Connection Status */}
+              <span className={`px-3 py-1 rounded-full text-sm ${isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </span>
 
-</div>
+              {/* HOME BUTTON */}
+              <Link
+                href="/admin/dashboard"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                🏠 Home
+              </Link>
 
+              {/* Quick Navigation */}
+              <Link
+                href="/admin/table-management"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                🏪 Tables
+              </Link>
+
+              <Link
+                href="admin/kitchen-display"
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+              >
+                🍳 Kitchen
+              </Link>
+
+              {/* Refresh Button */}
+              <button
+                onClick={loadInitialData}
+                disabled={refreshing}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                {refreshing ? '⏳' : '🔄'} Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECONDARY NAVIGATION BAR */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
+            {/* Back Button */}
             {currentStep !== 'table' && (
               <button
                 onClick={goBack}
@@ -436,10 +462,11 @@ function MobileOrderingInterface() {
               </button>
             )}
 
+            {/* Step Indicator */}
             <div className="flex-1 text-center">
-              <h1 className="text-xl font-semibold text-gray-900">
-                📱 Mobile Ordering
-              </h1>
+              <div className="text-sm text-gray-500">
+                Step {currentStep === 'table' ? '1' : currentStep === 'menu' ? '2' : '3'} of 3
+              </div>
               {selectedTable && (
                 <p className="text-sm text-gray-500 mt-1">
                   Table {selectedTable.table_number}
@@ -447,17 +474,11 @@ function MobileOrderingInterface() {
               )}
             </div>
 
+            {/* User Info & Cart */}
             <div className="flex items-center space-x-4">
               {/* User info */}
               <span className="text-sm text-gray-600">
                 👤 {user?.first_name || user?.email || 'User'}
-              </span>
-              
-              {/* Connection status */}
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-              }`}>
-                {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
               </span>
 
               {/* Cart badge */}
@@ -474,7 +495,7 @@ function MobileOrderingInterface() {
         </div>
       </div>
 
-      {/* Content */}
+      {/* MAIN CONTENT */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Table Selection */}
         {currentStep === 'table' && (
@@ -488,7 +509,7 @@ function MobileOrderingInterface() {
               </p>
             </div>
 
-            {tables.length === 0 && !isLoading ? (
+            {tables.length === 0 && !refreshing ? (
               <div className="text-center py-12">
                 <div className="text-4xl mb-4">🏪</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No tables available</h3>
@@ -518,7 +539,7 @@ function MobileOrderingInterface() {
                         {table.status}
                       </span>
                     </div>
-                    
+
                     <p className="text-sm text-gray-500 mb-2">
                       Capacity: {table.capacity} people
                     </p>
@@ -535,7 +556,7 @@ function MobileOrderingInterface() {
           </div>
         )}
 
-        {/* Menu Selection - Keep existing menu UI */}
+        {/* Menu Selection */}
         {currentStep === 'menu' && (
           <div>
             <div className="mb-6">
@@ -565,26 +586,16 @@ function MobileOrderingInterface() {
                   <button
                     key={category.id}
                     onClick={() => setSelectedCategory(category.id)}
-                    className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium transition-colors ${
-                      selectedCategory === category.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
+                    className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium transition-colors ${selectedCategory === category.id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
                   >
                     {category.icon} {category.name}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Debug Information */}
-            {menuCategories.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-gray-500">
-                  ⚠️ No menu categories found. Please add categories in the admin panel.
-                </p>
-              </div>
-            )}
 
             {/* Menu Items */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -641,7 +652,7 @@ function MobileOrderingInterface() {
                 <div className="text-4xl mb-4">🍽️</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No items found</h3>
                 <p className="text-gray-500">
-                  {searchQuery 
+                  {searchQuery
                     ? 'Try adjusting your search or selecting a different category'
                     : 'No items available in this category'
                   }
@@ -651,7 +662,7 @@ function MobileOrderingInterface() {
           </div>
         )}
 
-        {/* Cart - Keep existing cart UI but ensure it uses the new functions */}
+        {/* Cart */}
         {currentStep === 'cart' && (
           <div>
             <div className="mb-6">
@@ -805,5 +816,6 @@ function MobileOrderingInterface() {
   );
 }
 
-// Role guard for waiters, admins, and managers
-export default withRoleGuard(MobileOrderingInterface, ['admin', 'waiter', 'manager']);
+// Role guard for admins, waiters, and staff
+export default withRoleGuard(MobileOrderingInterface, ['admin', 'waiter', 'staff']);
+

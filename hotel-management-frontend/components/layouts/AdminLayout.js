@@ -79,7 +79,14 @@ export default function AdminLayout({ children }) {
       href: '/admin/inventory-categories', 
       icon: 'ߏ️',
       current: currentPath === '/admin/inventory-categories'
-    }
+    },
+    {
+      name: 'Advance Bookings',
+      href: '/admin/advance-bookings',
+      icon: '📅',
+      current: router.pathname.startsWith('/admin/advance-bookings')
+   },
+
   ];
 
   return (

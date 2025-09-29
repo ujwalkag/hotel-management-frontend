@@ -31,7 +31,7 @@ function KitchenUpdates() {
             
             <div className="space-x-4">
               <Link
-                href="/kitchen"
+                href="admin/kitchen-display"
                 className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
               >
                 View Kitchen Display

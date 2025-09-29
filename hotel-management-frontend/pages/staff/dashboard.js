@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import withRoleGuard from "@/hoc/withRoleGuard";
 import Link from "next/link";
+import { StaffAdvanceBookingWidget } from '@/components/AdvanceBookingWidgets';
+
 
 function StaffDashboard() {
   const { user, logout } = useAuth();
@@ -40,6 +42,8 @@ function StaffDashboard() {
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           <StatCard label="Today's Revenue / आज की कमाई" value={summary.total_today} />
+              <StaffAdvanceBookingWidget />
+
         </div>
       )}
 
@@ -47,7 +51,11 @@ function StaffDashboard() {
         <LinkCard href="/staff/room-billing" label="➕ Generate Room Bill / रूम बिल बनाएं" />
         <LinkCard href="/staff/bill-history" label="📜 View Bill History / बिल इतिहास" />
         <LinkCard href="/staff/restaurant-billing" label="🍽️ Generate Restaurant Bill / रेस्टोरेंट बिल बनाएं" />
-      </div>
+        <LinkCard href="/admin/mobile-ordering" label="🍽️  Mobile Orders / रेस्टोरेंट बिल बनाएं" />
+        <LinkCard href="/admin/table-management" label="🍽️  Table-management / रेस्टोरेंट बिल बनाएं" />
+        <LinkCard href="/admin/kitchen-display" label="🍽️  kitchen-display / रेस्टोरेंट बिल बनाएं" />
+
+        </div>
     </div>
   );
 }
@@ -70,3 +78,5 @@ function LinkCard({ href, label }) {
 }
 
 export default withRoleGuard(StaffDashboard, ["staff"]);
+
+

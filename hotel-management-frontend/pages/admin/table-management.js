@@ -1,5 +1,5 @@
-// pages/admin/table-management.js - COMPLETE WORKING VERSION
-// This file contains ALL fixes for billing and manage orders functionality
+// pages/admin/table-management.js - COMPLETE UPDATED VERSION WITH ERROR HANDLING + AUTH FIX
+// This file contains ALL fixes for billing and manage orders functionality + Error Handling + Advanced Booking
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import withRoleGuard from '@/hoc/withRoleGuard';
@@ -7,11 +7,12 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import AdminOrderManagement from '../../components/AdminOrderManagement';
 
-// BILLING ORDERS COMPONENT - This fetches orders separately for billing
+// BILLING ORDERS COMPONENT - Enhanced with error handling
 const BillingOrdersSection = ({ tableId }) => {
   const [orders, setOrders] = useState([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const { makeAuthenticatedRequest } = useAuth();
 
   useEffect(() => {
@@ -23,6 +24,7 @@ const BillingOrdersSection = ({ tableId }) => {
   const loadTableOrders = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log(`🔍 Loading orders for table ID: ${tableId}`);
 
       const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${tableId}/manage_orders/`);
@@ -34,14 +36,14 @@ const BillingOrdersSection = ({ tableId }) => {
         setOrders(data.orders || []);
         setTotalAmount(data.total_amount || 0);
       } else {
-        console.error('Failed to load table orders');
-        setOrders([]);
-        setTotalAmount(0);
+        throw new Error('Failed to load table orders');
       }
     } catch (error) {
       console.error('Error loading orders:', error);
+      setError(error.message);
       setOrders([]);
       setTotalAmount(0);
+      toast.error('Failed to load orders for this table');
     } finally {
       setLoading(false);
     }
@@ -51,6 +53,26 @@ const BillingOrdersSection = ({ tableId }) => {
     return (
       <div className="mb-6 p-4 bg-gray-50 rounded-lg">
         <div className="animate-pulse">Loading orders...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div className="flex items-center">
+          <span className="text-red-600 text-lg mr-2">⚠️</span>
+          <div>
+            <h3 className="text-red-800 font-semibold">Error loading orders</h3>
+            <p className="text-red-700 text-sm">{error}</p>
+            <button
+              onClick={loadTableOrders}
+              className="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+            >
+              🔄 Try Again
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -90,11 +112,12 @@ const BillingOrdersSection = ({ tableId }) => {
                 </div>
                 <div className="text-sm text-gray-600 flex items-center space-x-2">
                   <span>x{order.quantity}</span>
-                  <span className={`px-2 py-1 rounded text-xs ${order.status === 'served' ? 'bg-green-100 text-green-800' :
+                  <span className={`px-2 py-1 rounded text-xs ${
+                    order.status === 'served' ? 'bg-green-100 text-green-800' :
                     order.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                      order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                    }`}>
+                    order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
                     {order.status}
                   </span>
                   {order.special_instructions && (
@@ -153,6 +176,72 @@ const BillingOrdersSection = ({ tableId }) => {
   );
 };
 
+// Error Boundary Component
+const ErrorBoundary = ({ error, onRetry, onHome }) => (
+  <div className="min-h-96 flex items-center justify-center">
+    <div className="text-center max-w-md mx-auto p-6">
+      <div className="text-6xl mb-4">⚠️</div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h2>
+      <p className="text-gray-600 mb-6">{error}</p>
+      
+      <div className="space-y-3">
+        <button
+          onClick={onRetry}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          🔄 Try Again
+        </button>
+        
+        <Link
+          href="/admin/dashboard"
+          className="block w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium text-center transition-colors"
+        >
+          🏠 Go to Dashboard
+        </Link>
+      </div>
+    </div>
+  </div>
+);
+
+// BOOKING NOTIFICATION COMPONENT - Shows across all pages
+const BookingNotifications = ({ bookings }) => {
+  if (!bookings || bookings.length === 0) return null;
+
+  const todayBookings = bookings.filter(booking => {
+    const today = new Date().toDateString();
+    const bookingDate = new Date(booking.booking_date).toDateString();
+    return today === bookingDate;
+  });
+
+  if (todayBookings.length === 0) return null;
+
+  return (
+    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <div className="flex items-start">
+        <span className="text-blue-600 text-lg mr-2">📅</span>
+        <div className="flex-1">
+          <h4 className="font-semibold text-blue-800 mb-1">Today's Bookings ({todayBookings.length})</h4>
+          <div className="space-y-1">
+            {todayBookings.slice(0, 3).map((booking, index) => (
+              <div key={index} className="text-sm text-blue-700">
+                <strong>{booking.customer_name}</strong> - {booking.customer_phone} 
+                {booking.remaining_amount > 0 && (
+                  <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
+                    ₹{booking.remaining_amount} pending
+                  </span>
+                )}
+              </div>
+            ))}
+            {todayBookings.length > 3 && (
+              <p className="text-sm text-blue-600">+{todayBookings.length - 3} more bookings</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 function TableManagementDashboard() {
   const { user, makeAuthenticatedRequest } = useAuth();
   const [tables, setTables] = useState([]);
@@ -161,6 +250,8 @@ function TableManagementDashboard() {
   const [dashboardStats, setDashboardStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [selectedTableId, setSelectedTableId] = useState(null);
 
   // Add Order Modal States
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
@@ -181,6 +272,9 @@ function TableManagementDashboard() {
   // Admin Order Management States
   const [showOrderManagement, setShowOrderManagement] = useState(false);
   const [managingTable, setManagingTable] = useState(null);
+
+  // Booking States
+  const [bookings, setBookings] = useState([]);
 
   // Form States
   const [newTableData, setNewTableData] = useState({
@@ -230,37 +324,75 @@ function TableManagementDashboard() {
     };
   }, []);
 
+  // Automatic error recovery
+  useEffect(() => {
+    if (error && !loading) {
+      const timer = setTimeout(() => {
+        console.log('🔄 Attempting automatic recovery...');
+        setError(null);
+        loadInitialData();
+      }, 10000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [error, loading]);
+
+  // Handle page visibility change to refresh data
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !loading && !refreshing) {
+        console.log('👀 Page became visible, refreshing data...');
+        loadInitialData();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loading, refreshing]);
+
   const connectWebSocket = () => {
     try {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/table-management/`;
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
         setIsConnected(true);
-        console.log('Table Management WebSocket connected');
+        console.log('✅ Table Management WebSocket connected');
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
         }
       };
 
-      wsRef.current.onclose = () => {
+      wsRef.current.onclose = (event) => {
         setIsConnected(false);
-        console.log('Table Management WebSocket disconnected');
-        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+        console.log('❌ Table Management WebSocket disconnected');
+        
+        // Only reconnect if not a normal closure
+        if (event.code !== 1000) {
+          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+        }
       };
 
       wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('❌ WebSocket error:', error);
         setIsConnected(false);
       };
 
       wsRef.current.onmessage = (event) => {
-        handleWebSocketMessage(JSON.parse(event.data));
+        try {
+          handleWebSocketMessage(JSON.parse(event.data));
+        } catch (parseError) {
+          console.error('Error parsing WebSocket message:', parseError);
+        }
       };
     } catch (error) {
       console.error('Error connecting WebSocket:', error);
-      setTimeout(loadInitialData, 5000);
+      setIsConnected(false);
     }
   };
 
@@ -302,80 +434,206 @@ function TableManagementDashboard() {
     }
   };
 
+  // ENHANCED loadInitialData with FIXED AUTH ISSUE
   const loadInitialData = async () => {
     try {
       setRefreshing(true);
-      const [tablesRes, statsRes] = await Promise.all([
-        fetch('/api/restaurant/tables/with_orders/', {
-          headers: { Authorization: `Bearer ${user?.access}` }
-        }),
-        fetch('/api/restaurant/dashboard-stats/', {
-          headers: { Authorization: `Bearer ${user?.access}` }
-        })
+      setError(null); // Clear previous errors
+      
+      console.log('🔍 Loading initial table data...');
+
+      // FIXED: Use makeAuthenticatedRequest for all API calls to handle token refresh
+      const [tablesResponse, statsResponse, bookingsResponse] = await Promise.all([
+        makeAuthenticatedRequest('/api/restaurant/tables/with_orders/'),
+        makeAuthenticatedRequest('/api/restaurant/dashboard-stats/'),
+        makeAuthenticatedRequest('/api/restaurant/bookings/')
       ]);
 
-      if (tablesRes.ok) {
-        const payload = await tablesRes.json();
+      // Handle tables response
+      if (tablesResponse && tablesResponse.ok) {
+        const payload = await tablesResponse.json();
         console.log('🔍 Raw API response:', payload);
 
-        // Extract the tables array (handle different response formats)
-        const raw = Array.isArray(payload) ? payload : payload.tables || [];
+        // Validate data structure
+        if (payload && (Array.isArray(payload) || payload.tables)) {
+          // Extract the tables array (handle different response formats)
+          const raw = Array.isArray(payload) ? payload : payload.tables || [];
 
-        // FIXED: Map with proper field extraction for new API structure
-        const formatted = raw.map(tbl => {
-          // Use current_bill_amount and session_info from the actual API
-          const sessionInfo = tbl.session_info || {};
-          const currentBillAmount = tbl.current_bill_amount || 0;
-          const hasOrders = sessionInfo.order_count > 0 || currentBillAmount > 0;
+          // Map with proper field extraction for new API structure
+          const formatted = raw.map(tbl => {
+            const sessionInfo = tbl.session_info || {};
+            const currentBillAmount = tbl.current_bill_amount || 0;
+            const hasOrders = sessionInfo.order_count > 0 || currentBillAmount > 0;
 
-          console.log(`Table ${tbl.table_number}:`, {
-            sessionInfo,
-            currentBillAmount,
-            hasOrders
+            console.log(`Table ${tbl.table_number}:`, {
+              sessionInfo,
+              currentBillAmount,
+              hasOrders
+            });
+
+            return {
+              ...tbl,
+              // Active orders (for kitchen display)
+              active_orders: tbl.active_orders || [],
+              active_orders_count: tbl.active_orders_count || 0,
+
+              // Billing information (mapped from actual API fields)
+              session_orders_count: sessionInfo.order_count || 0,
+              total_bill_amount: currentBillAmount,
+              can_bill: hasOrders,
+              has_served_orders: hasOrders,
+
+              // Frontend display flags
+              show_billing_options: hasOrders,
+              is_billable: hasOrders,
+              billing_ready: hasOrders,
+
+              // Duration calculation
+              time_occupied: tbl.occupancy_duration || 0
+            };
           });
 
-          return {
-            ...tbl,
-            // Active orders (for kitchen display)
-            active_orders: tbl.active_orders || [],
-            active_orders_count: tbl.active_orders_count || 0,
+          console.log('✅ Tables loaded successfully:', formatted.length);
+          setTables(formatted);
 
-            // Billing information (mapped from actual API fields)
-            session_orders_count: sessionInfo.order_count || 0,
-            total_bill_amount: currentBillAmount,
-            can_bill: hasOrders,
-            has_served_orders: hasOrders,
-
-            // Frontend display flags
-            show_billing_options: hasOrders,
-            is_billable: hasOrders,
-            billing_ready: hasOrders,
-
-            // Duration calculation
-            time_occupied: tbl.occupancy_duration || 0
-          };
-        });
-
-        console.log('🔍 Formatted tables with billing data:', formatted);
-        setTables(formatted);
+          // Try to restore previously selected table
+          if (selectedTableId) {
+            const foundTable = formatted.find(table => table.id === selectedTableId);
+            if (foundTable) {
+              setSelectedTable(foundTable);
+              console.log('✅ Restored selected table:', foundTable.table_number);
+            } else {
+              console.log('⚠️ Previously selected table not found, clearing selection');
+              setSelectedTable(null);
+              setSelectedTableId(null);
+              setBillingTable(null);
+              setShowBillModal(false);
+              setShowOrderManagement(false);
+            }
+          }
+        } else {
+          throw new Error('Invalid data structure received from API');
+        }
+      } else if (tablesResponse && tablesResponse.status === 401) {
+        // Token refresh failed or invalid—redirect to login
+        toast.error('Session expired. Redirecting to login...');
+        localStorage.clear();
+        window.location.href = '/login';
+        return;
       } else {
-        throw new Error('Failed to load tables');
+        const errorData = await tablesResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.detail || 'Failed to load tables');
       }
 
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
+      // Handle stats response with auth error handling
+      if (statsResponse && statsResponse.ok) {
+        const statsData = await statsResponse.json();
         setDashboardStats(statsData);
+      } else if (statsResponse && statsResponse.status === 401) {
+        // Token refresh failed or invalid—redirect to login
+        toast.error('Session expired. Redirecting to login...');
+        localStorage.clear();
+        window.location.href = '/login';
+        return;
+      } else {
+        console.error('Failed to load dashboard stats');
       }
+
+      // Handle bookings response
+      if (bookingsResponse && bookingsResponse.ok) {
+        const bookingsData = await bookingsResponse.json();
+        setBookings(Array.isArray(bookingsData) ? bookingsData : bookingsData.results || []);
+      } else {
+        console.log('Bookings not available or failed to load');
+        setBookings([]);
+      }
+
     } catch (error) {
-      console.error('Error loading data:', error);
-      toast.error('Failed to load table data');
+      console.error('❌ Error loading initial data:', error);
+      setError(error.message || 'Failed to load table data');
+      
+      // Safe fallbacks
+      setTables([]);
+      setSelectedTable(null);
+      setSelectedTableId(null);
+      setBillingTable(null);
+      setShowBillModal(false);
+      setShowOrderManagement(false);
+      setBookings([]);
+      
+      toast.error(`Failed to load tables: ${error.message}`);
+      
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // CRUD Functions
+  // SAFE table selection with validation
+  const selectTableForBilling = async (table) => {
+    try {
+      if (!table || !table.id) {
+        toast.error('Invalid table selected');
+        return;
+      }
+      
+      // Verify table still exists
+      const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${table.id}/`);
+      
+      if (response && response.ok) {
+        const currentTableData = await response.json();
+        
+        setBillingTable(currentTableData);
+        setSelectedTable(currentTableData);
+        setSelectedTableId(currentTableData.id);
+        setShowBillModal(true);
+        
+        console.log('✅ Table selected for billing:', currentTableData.table_number);
+      } else {
+        throw new Error('Table no longer exists');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error selecting table:', error);
+      toast.error('Table not found. Refreshing data...');
+      
+      // Refresh and clear selections
+      await loadInitialData();
+      setShowBillModal(false);
+      setBillingTable(null);
+    }
+  };
+
+  // SAFE order management
+  const openOrderManagement = async (table) => {
+    try {
+      if (!table || !table.id) {
+        toast.error('Invalid table selected');
+        return;
+      }
+      
+      // Verify table exists
+      const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${table.id}/`);
+      
+      if (response && response.ok) {
+        const currentTableData = await response.json();
+        setManagingTable(currentTableData);
+        setSelectedTable(currentTableData);
+        setSelectedTableId(currentTableData.id);
+        setShowOrderManagement(true);
+      } else {
+        throw new Error('Table no longer exists');
+      }
+      
+    } catch (error) {
+      console.error('❌ Table access error:', error);
+      toast.error('Table not found. Refreshing data...');
+      await loadInitialData();
+      setShowOrderManagement(false);
+    }
+  };
+
+  // CRUD Functions (keeping existing functionality)
   const createTable = async () => {
     try {
       if (!newTableData.table_number.trim()) {
@@ -393,16 +651,12 @@ function TableManagementDashboard() {
         return;
       }
 
-      const response = await fetch('/api/restaurant/tables/', {
+      const response = await makeAuthenticatedRequest('/api/restaurant/tables/', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user?.access}`
-        },
         body: JSON.stringify(newTableData)
       });
 
-      if (response.ok) {
+      if (response && response.ok) {
         const newTable = await response.json();
         setTables(prev => [...prev, newTable]);
         setShowCreateModal(false);
@@ -446,16 +700,12 @@ function TableManagementDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/restaurant/tables/${editingTable.id}/`, {
+      const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${editingTable.id}/`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user?.access}`
-        },
         body: JSON.stringify(editTableData)
       });
 
-      if (response.ok) {
+      if (response && response.ok) {
         const updatedTable = await response.json();
         setTables(prev => prev.map(table =>
           table.id === editingTable.id ? updatedTable : table
@@ -486,12 +736,11 @@ function TableManagementDashboard() {
         return;
       }
 
-      const response = await fetch(`/api/restaurant/tables/${deletingTable.id}/`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${user?.access}` }
+      const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${deletingTable.id}/`, {
+        method: 'DELETE'
       });
 
-      if (response.ok) {
+      if (response && response.ok) {
         setTables(prev => prev.filter(table => table.id !== deletingTable.id));
         setShowDeleteModal(false);
         setDeletingTable(null);
@@ -565,18 +814,13 @@ function TableManagementDashboard() {
 
         // Ask for print with enhanced details
         if (confirm('Billing completed! Would you like to print the detailed bill?')) {
-          // Get the orders for detailed printing
-          // CORRECT - Get only session orders for this table
           let sessionOrders = [];
 
-          // Use the session orders from current table billing data
           if (billingTable.session_orders) {
             sessionOrders = billingTable.session_orders;
           } else if (billingTable.active_orders) {
-            // Fallback to active orders
             sessionOrders = billingTable.active_orders;
           } else {
-            // Last resort: get session orders from API
             try {
               const sessionResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/session_orders/`);
               if (sessionResponse && sessionResponse.ok) {
@@ -585,19 +829,12 @@ function TableManagementDashboard() {
               }
             } catch (error) {
               console.error('Could not get session orders:', error);
-              sessionOrders = []; // Empty fallback
+              sessionOrders = [];
             }
           }
 
           console.log('🧾 Printing orders for table:', sessionOrders);
-
-          // Ask for print with CORRECT orders
-          if (confirm('Billing completed! Would you like to print the detailed bill?')) {
-            await printDetailedBill(result, billingTable.table_number, sessionOrders);
-          }
-
-
-          await printDetailedBill(result, billingTable.table_number, orders);
+          await printDetailedBill(result, billingTable.table_number, sessionOrders);
         }
       } else {
         const error = await response.json();
@@ -612,11 +849,9 @@ function TableManagementDashboard() {
   // Menu Functions
   const loadMenuItems = async () => {
     try {
-      const response = await fetch('/api/restaurant/menu-for-ordering/', {
-        headers: { Authorization: `Bearer ${user?.access}` }
-      });
+      const response = await makeAuthenticatedRequest('/api/restaurant/menu-for-ordering/');
 
-      if (response.ok) {
+      if (response && response.ok) {
         const menuData = await response.json();
         console.log('🔍 Menu data loaded:', menuData);
         setMenuItems(menuData);
@@ -661,19 +896,15 @@ function TableManagementDashboard() {
         special_instructions: ''
       }));
 
-      const response = await fetch('/api/restaurant/orders/bulk_create/', {
+      const response = await makeAuthenticatedRequest('/api/restaurant/orders/bulk_create/', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user?.access}`
-        },
         body: JSON.stringify({
           table: orderingTable.id,
           orders: orders
         })
       });
 
-      if (response.ok) {
+      if (response && response.ok) {
         toast.success(`Order placed for Table ${orderingTable.table_number}`);
         setShowAddOrderModal(false);
         loadInitialData();
@@ -687,21 +918,18 @@ function TableManagementDashboard() {
     }
   };
 
-  // Enhanced Bill Printing Function - COMPLETE REPLACEMENT
+  // Enhanced Bill Printing Function - Keep existing
   const printDetailedBill = async (session, tableNumber, orders) => {
     try {
-      // Get current date and time
       const now = new Date();
       const billDate = now.toLocaleDateString('en-IN');
       const billTime = now.toLocaleTimeString('en-IN');
 
-      // Calculate totals
       const subtotal = orders.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0);
       const discountAmount = parseFloat(session.discount_amount || 0);
       const serviceCharge = parseFloat(session.service_charge || 0);
       const taxableAmount = subtotal - discountAmount;
 
-      // GST Calculation (18% for restaurants in India)
       const gstRate = 18;
       const gstAmount = (taxableAmount * gstRate) / 100;
       const cgstAmount = gstAmount / 2;
@@ -934,7 +1162,6 @@ function TableManagementDashboard() {
       printWindow.document.write(printContent);
       printWindow.document.close();
 
-      // Auto-print after a short delay
       setTimeout(() => {
         printWindow.print();
         printWindow.close();
@@ -945,12 +1172,6 @@ function TableManagementDashboard() {
       console.error('Error printing detailed bill:', error);
       toast.error('❌ Failed to print detailed bill');
     }
-  };
-
-  // Admin Functions
-  const openOrderManagement = (table) => {
-    setManagingTable(table);
-    setShowOrderManagement(true);
   };
 
   // Utility Functions
@@ -994,27 +1215,34 @@ function TableManagementDashboard() {
   const canEditTables = ['admin', 'manager'].includes(user?.role);
   const canDeleteTables = user?.role === 'admin';
 
-  if (loading) {
+  if (loading && tables.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">Loading table management...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="text-lg">Loading table management...</div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header */}
+      {/* ENHANCED HEADER WITH HOME BUTTON + ADVANCED BOOKING LINK */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-gray-900">🏪 Table Management Dashboard</h1>
-
             <div className="flex items-center space-x-4">
-              <span className={`px-3 py-1 rounded-full text-sm ${isConnected
-                ? 'bg-green-100 text-green-800'
-                : 'bg-red-100 text-red-800'
-                }`}>
+              {/* HOME BUTTON - PROPERLY POSITIONED */}
+              <Link
+                href="/admin/dashboard"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                🏠 Home
+              </Link>
+
+              <span className={`px-3 py-1 rounded-full text-sm ${isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
 
@@ -1028,6 +1256,16 @@ function TableManagementDashboard() {
                   </button>
                 )}
 
+                {/* ADVANCED BOOKING LINK - ADMIN ONLY */}
+                {user?.role === 'admin' && (
+                  <Link
+                    href="/admin/bookings"
+                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                  >
+                    📅 Advanced Booking
+                  </Link>
+                )}
+
                 <Link
                   href="/admin/mobile-ordering"
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1036,8 +1274,8 @@ function TableManagementDashboard() {
                 </Link>
 
                 <Link
-                  href="/admin/kitchen-display"
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  href="/kitchen"
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
                 >
                   🍳 Kitchen Display
                 </Link>
@@ -1047,7 +1285,7 @@ function TableManagementDashboard() {
                   disabled={refreshing}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
                 >
-                  🔄 Refresh
+                  {refreshing ? '⏳ Loading...' : '🔄 Refresh'}
                 </button>
               </div>
             </div>
@@ -1055,9 +1293,32 @@ function TableManagementDashboard() {
         </div>
       </div>
 
-      {/* Dashboard Stats */}
-      {dashboardStats.tables && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* BOOKING NOTIFICATIONS - SHOWS ON ALL ROLE PAGES */}
+        <BookingNotifications bookings={bookings} />
+
+        {/* ERROR STATE HANDLING */}
+        {error && !loading && (
+          <ErrorBoundary
+            error={error}
+            onRetry={() => {
+              setError(null);
+              loadInitialData();
+            }}
+            onHome={() => window.location.href = '/admin/dashboard'}
+          />
+        )}
+
+        {/* LOADING STATE */}
+        {refreshing && (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Refreshing tables...</p>
+          </div>
+        )}
+
+        {/* DASHBOARD STATS */}
+        {!error && !loading && dashboardStats.tables && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-white p-6 rounded-lg shadow-sm border">
               <div className="flex items-center">
@@ -1107,174 +1368,187 @@ function TableManagementDashboard() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Tables Grid */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {tables.map(table => (
-            <div
-              key={table.id}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => setSelectedTable(table)}
-            >
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900">Table {table.table_number}</h3>
-                  <div className="text-sm text-gray-600">
-                    Capacity: {table.capacity} people
+        {/* EMPTY STATE */}
+        {!error && !loading && tables.length === 0 && (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">🏪</div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">No tables found</h2>
+            <p className="text-gray-600 mb-6">No tables are currently configured for this restaurant.</p>
+            
+            <div className="space-x-4">
+              <button
+                onClick={loadInitialData}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
+              >
+                🔄 Refresh Data
+              </button>
+              
+              {canCreateTables && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium"
+                >
+                  ➕ Add Your First Table
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TABLES GRID - Only show if we have data and no errors */}
+        {!error && !loading && tables.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {tables.map(table => (
+              <div
+                key={table.id}
+                className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => setSelectedTable(table)}
+              >
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-gray-900">Table {table.table_number}</h3>
+                    <div className="text-sm text-gray-600">
+                      Capacity: {table.capacity} people
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between mb-3">
-                  {canEditTables && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingTable(table);
-                        setEditTableData({
-                          table_number: table.table_number,
-                          capacity: table.capacity,
-                          location: table.location || '',
-                          status: table.status,
-                          priority_level: table.priority_level || 1,
-                          notes: table.notes || ''
-                        });
-                        setShowEditModal(true);
-                      }}
-                      className="text-blue-600 hover:text-blue-800 text-sm"
-                    >
-                      ✏️ Edit
-                    </button>
-                  )}
-                  {canDeleteTables && table.status === 'free' && table.active_orders_count === 0 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingTable(table);
-                        setShowDeleteModal(true);
-                      }}
-                      className="text-red-600 hover:text-red-800 text-sm"
-                    >
-                      🗑️ Delete
-                    </button>
-                  )}
-                </div>
-
-                {/* Status Badge */}
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border mb-3 ${getTableStatusColor(table.status)}`}>
-                  <span className="mr-1">{getTableStatusIcon(table.status)}</span>
-                  {table.status.charAt(0).toUpperCase() + table.status.slice(1)}
-                </div>
-
-                {/* Active Orders */}
-                {table.active_orders && table.active_orders.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-sm font-medium text-gray-700 mb-1">
-                      Active Orders ({table.active_orders.length}):
-                    </p>
-                    {table.active_orders.slice(0, 3).map((order, index) => (
-                      <div key={index} className="text-xs text-gray-600">
-                        <span className="font-medium">{order.menu_item_name} x{order.quantity}</span>
-                        <span className={`ml-2 px-2 py-1 rounded ${order.status === 'pending' ? 'bg-orange-100 text-orange-600' :
-                          order.status === 'preparing' ? 'bg-blue-100 text-blue-600' :
-                            order.status === 'ready' ? 'bg-green-100 text-green-600' :
-                              'bg-gray-100 text-gray-600'
-                          }`}>
-                          {order.status}
-                        </span>
-                      </div>
-                    ))}
-                    {table.active_orders.length > 3 && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        +{table.active_orders.length - 3} more orders
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Bill Amount */}
-                {table.total_bill_amount > 0 && (
-                  <p className="text-sm text-gray-600 mb-2">
-                    Bill: {formatCurrency(table.total_bill_amount)}
-                  </p>
-                )}
-
-                {/* Occupancy Duration */}
-                {table.time_occupied > 0 && (
-                  <p className="text-sm text-gray-600 mb-2">
-                    Occupied for: {formatDuration(table.time_occupied)}
-                  </p>
-                )}
-
-                {/* Location */}
-                {table.location && (
-                  <p className="text-sm text-gray-600 mb-3">
-                    📍 {table.location}
-                  </p>
-                )}
-
-                {/* Quick Actions */}
-                {table.status === 'occupied' && (
-                  <div className="flex space-x-2">
-                    {user?.role === 'admin' && table.active_orders_count > 0 && (
+                  <div className="flex items-center justify-between mb-3">
+                    {canEditTables && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          openOrderManagement(table);
+                          setEditingTable(table);
+                          setEditTableData({
+                            table_number: table.table_number,
+                            capacity: table.capacity,
+                            location: table.location || '',
+                            status: table.status,
+                            priority_level: table.priority_level || 1,
+                            notes: table.notes || ''
+                          });
+                          setShowEditModal(true);
                         }}
-                        className="flex-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                        className="text-blue-600 hover:text-blue-800 text-sm"
                       >
-                        🔧 Manage
+                        ✏️ Edit
                       </button>
                     )}
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openAddOrderModal(table);
-                      }}
-                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                    >
-                      + Order
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setBillingTable(table);
-                        setShowBillModal(true);
-                      }}
-                      className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                    >
-                      💳 Bill
-                    </button>
+                    {canDeleteTables && table.status === 'free' && table.active_orders_count === 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingTable(table);
+                          setShowDeleteModal(true);
+                        }}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        🗑️ Delete
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
 
-        {/* Empty State */}
-        {tables.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">🏪</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Tables Found</h3>
-            <p className="text-gray-600 mb-4">Get started by adding your first table.</p>
-            {canCreateTables && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-              >
-                + Add Your First Table
-              </button>
-            )}
+                  {/* Status Badge */}
+                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border mb-3 ${getTableStatusColor(table.status)}`}>
+                    <span className="mr-1">{getTableStatusIcon(table.status)}</span>
+                    {table.status.charAt(0).toUpperCase() + table.status.slice(1)}
+                  </div>
+
+                  {/* Active Orders */}
+                  {table.active_orders && table.active_orders.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-sm font-medium text-gray-700 mb-1">
+                        Active Orders ({table.active_orders.length}):
+                      </p>
+                      {table.active_orders.slice(0, 3).map((order, index) => (
+                        <div key={index} className="text-xs text-gray-600">
+                          <span className="font-medium">{order.menu_item_name} x{order.quantity}</span>
+                          <span className={`ml-2 px-2 py-1 rounded ${
+                            order.status === 'pending' ? 'bg-orange-100 text-orange-600' :
+                            order.status === 'preparing' ? 'bg-blue-100 text-blue-600' :
+                            order.status === 'ready' ? 'bg-green-100 text-green-600' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+                      ))}
+                      {table.active_orders.length > 3 && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          +{table.active_orders.length - 3} more orders
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Bill Amount */}
+                  {table.total_bill_amount > 0 && (
+                    <p className="text-sm text-gray-600 mb-2">
+                      Bill: {formatCurrency(table.total_bill_amount)}
+                    </p>
+                  )}
+
+                  {/* Occupancy Duration */}
+                  {table.time_occupied > 0 && (
+                    <p className="text-sm text-gray-600 mb-2">
+                      Occupied for: {formatDuration(table.time_occupied)}
+                    </p>
+                  )}
+
+                  {/* Location */}
+                  {table.location && (
+                    <p className="text-sm text-gray-600 mb-3">
+                      📍 {table.location}
+                    </p>
+                  )}
+
+                  {/* Quick Actions */}
+                  {table.status === 'occupied' && (
+                    <div className="flex space-x-2">
+                      {user?.role === 'admin' && table.active_orders_count > 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openOrderManagement(table);
+                          }}
+                          className="flex-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                        >
+                          🔧 Manage
+                        </button>
+                      )}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAddOrderModal(table);
+                        }}
+                        className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        + Order
+                      </button>
+
+                      {table.can_bill && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectTableForBilling(table);
+                          }}
+                          className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                        >
+                          💳 Bill
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
+      {/* ALL EXISTING MODALS - KEEPING THEM EXACTLY AS THEY ARE */}
       {/* Create Table Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1386,6 +1660,9 @@ function TableManagementDashboard() {
           </div>
         </div>
       )}
+
+      {/* ALL OTHER EXISTING MODALS GO HERE - KEEPING THEM EXACTLY AS BEFORE */}
+      {/* Edit Modal, Delete Modal, Billing Modal, etc. - All preserved exactly */}
 
       {/* Edit Table Modal */}
       {showEditModal && editingTable && (
@@ -1551,13 +1828,13 @@ function TableManagementDashboard() {
         </div>
       )}
 
-      {/* FIXED BILLING MODAL - Uses dedicated component */}
+      {/* BILLING MODAL - Uses dedicated component with error handling */}
       {showBillModal && billingTable && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-screen overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">💳 Complete Billing - Table {billingTable.table_number}</h2>
 
-            {/* Use the dedicated billing orders component */}
+            {/* Use the dedicated billing orders component with error handling */}
             <BillingOrdersSection tableId={billingTable.id} />
 
             {/* Customer Details Form */}
@@ -1774,7 +2051,7 @@ function TableManagementDashboard() {
                     <div key={index} className="border rounded-lg p-3">
                       <div className="flex items-center justify-between">
                         <h4 className="font-medium">{order.menu_item_name}</h4>
-                        <span className={`px-2 py-1 rounded text-sm ${getStatusColor(order.status)}`}>
+                        <span className={`px-2 py-1 rounded text-sm ${getTableStatusColor(order.status)}`}>
                           {order.status}
                         </span>
                       </div>
@@ -1801,8 +2078,7 @@ function TableManagementDashboard() {
                     <button
                       onClick={() => {
                         setSelectedTable(null);
-                        setBillingTable(selectedTable);
-                        setShowBillModal(true);
+                        selectTableForBilling(selectedTable);
                       }}
                       className="w-full mt-3 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
@@ -1941,5 +2217,4 @@ function TableManagementDashboard() {
   );
 }
 
-export default withRoleGuard(TableManagementDashboard, ['admin', 'manager']);
-
+export default withRoleGuard(TableManagementDashboard, ['admin', 'staff']);

@@ -4,6 +4,11 @@ import WaiterLayout from '@/components/layouts/WaiterLayout';
 import withRoleGuard from '@/hoc/withRoleGuard';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import {
+  AdvanceBookingNotificationBanner,
+  WaiterAdvanceBookingWidget
+} from '@/components/AdvanceBookingWidgets';
+
 
 function WaiterDashboard() {
   const { user, makeAuthenticatedRequest } = useAuth();
@@ -168,6 +173,18 @@ function WaiterDashboard() {
             </div>
           </div>
         </div>
+
+	   <div className="bg-white rounded-lg p-6 shadow-md border-l-4 border-green-500">
+            <div className="flex items-center">
+              <div className="text-2xl text-green-600 mr-4">📝</div>
+              <div>
+                  <AdvanceBookingNotificationBanner />
+	           <WaiterAdvanceBookingWidget />
+              </div>
+            </div>
+          </div>
+		
+
 
         {/* Quick Actions with HOME ACCESS */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
