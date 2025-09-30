@@ -28,10 +28,10 @@ function KitchenUpdates() {
             <div className="text-6xl mb-4">🍳</div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Kitchen Updates</h2>
             <p className="text-gray-600 mb-6">This page shows real-time kitchen status updates. Currently under development.</p>
-            
+
             <div className="space-x-4">
               <Link
-                href="admin/kitchen-display"
+                href="/admin/kitchen-display"
                 className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
               >
                 View Kitchen Display
@@ -51,3 +51,4 @@ function KitchenUpdates() {
 }
 
 export default withRoleGuard(KitchenUpdates, ['waiter']);
+

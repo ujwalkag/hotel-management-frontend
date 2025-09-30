@@ -1,3 +1,4 @@
+
 // pages/admin/table-management.js - COMPLETE UPDATED VERSION WITH ERROR HANDLING + AUTH FIX
 // This file contains ALL fixes for billing and manage orders functionality + Error Handling + Advanced Booking
 import { useState, useEffect, useRef } from 'react';
@@ -183,7 +184,7 @@ const ErrorBoundary = ({ error, onRetry, onHome }) => (
       <div className="text-6xl mb-4">⚠️</div>
       <h2 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h2>
       <p className="text-gray-600 mb-6">{error}</p>
-      
+
       <div className="space-y-3">
         <button
           onClick={onRetry}
@@ -191,7 +192,7 @@ const ErrorBoundary = ({ error, onRetry, onHome }) => (
         >
           🔄 Try Again
         </button>
-        
+
         <Link
           href="/admin/dashboard"
           className="block w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium text-center transition-colors"
@@ -224,7 +225,7 @@ const BookingNotifications = ({ bookings }) => {
           <div className="space-y-1">
             {todayBookings.slice(0, 3).map((booking, index) => (
               <div key={index} className="text-sm text-blue-700">
-                <strong>{booking.customer_name}</strong> - {booking.customer_phone} 
+                <strong>{booking.customer_name}</strong> - {booking.customer_phone}
                 {booking.remaining_amount > 0 && (
                   <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
                     ₹{booking.remaining_amount} pending
@@ -243,7 +244,7 @@ const BookingNotifications = ({ bookings }) => {
 };
 
 function TableManagementDashboard() {
-  const { user, makeAuthenticatedRequest } = useAuth();
+  const { user, makeAuthenticatedRequest, isAuthenticated, isLoading: authLoading } = useAuth();
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -310,19 +311,31 @@ function TableManagementDashboard() {
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    connectWebSocket();
-    loadInitialData();
+useEffect(() => {
+  // Only start loading when authentication state is determined
+  if (!authLoading) {
+    if (isAuthenticated) {
+      console.log('✅ User authenticated, loading data and connecting WebSocket');
+      connectWebSocket();
+      loadInitialData();
+    } else {
+      console.log('❌ User not authenticated, clearing data');
+      setTables([]);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+  
+  return () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+  };
+}, [isAuthenticated, authLoading]); // 🔥 CRITICAL: Add these dependencies
 
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Automatic error recovery
   useEffect(() => {
@@ -332,7 +345,7 @@ function TableManagementDashboard() {
         setError(null);
         loadInitialData();
       }, 10000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [error, loading]);
@@ -371,7 +384,7 @@ function TableManagementDashboard() {
       wsRef.current.onclose = (event) => {
         setIsConnected(false);
         console.log('❌ Table Management WebSocket disconnected');
-        
+
         // Only reconnect if not a normal closure
         if (event.code !== 1000) {
           reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
@@ -437,9 +450,22 @@ function TableManagementDashboard() {
   // ENHANCED loadInitialData with FIXED AUTH ISSUE
   const loadInitialData = async () => {
     try {
+      if (authLoading) {
+      console.log('⏳ Authentication still loading, waiting...');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      console.log('🔒 User not authenticated, cannot load data');
+      setLoading(false);
+      setRefreshing(false);
+      setTables([]);
+      return;
+    }
+
       setRefreshing(true);
       setError(null); // Clear previous errors
-      
+
       console.log('🔍 Loading initial table data...');
 
       // FIXED: Use makeAuthenticatedRequest for all API calls to handle token refresh
@@ -551,7 +577,7 @@ function TableManagementDashboard() {
     } catch (error) {
       console.error('❌ Error loading initial data:', error);
       setError(error.message || 'Failed to load table data');
-      
+
       // Safe fallbacks
       setTables([]);
       setSelectedTable(null);
@@ -560,9 +586,9 @@ function TableManagementDashboard() {
       setShowBillModal(false);
       setShowOrderManagement(false);
       setBookings([]);
-      
+
       toast.error(`Failed to load tables: ${error.message}`);
-      
+
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -576,27 +602,27 @@ function TableManagementDashboard() {
         toast.error('Invalid table selected');
         return;
       }
-      
+
       // Verify table still exists
       const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${table.id}/`);
-      
+
       if (response && response.ok) {
         const currentTableData = await response.json();
-        
+
         setBillingTable(currentTableData);
         setSelectedTable(currentTableData);
         setSelectedTableId(currentTableData.id);
         setShowBillModal(true);
-        
+
         console.log('✅ Table selected for billing:', currentTableData.table_number);
       } else {
         throw new Error('Table no longer exists');
       }
-      
+
     } catch (error) {
       console.error('❌ Error selecting table:', error);
       toast.error('Table not found. Refreshing data...');
-      
+
       // Refresh and clear selections
       await loadInitialData();
       setShowBillModal(false);
@@ -611,10 +637,10 @@ function TableManagementDashboard() {
         toast.error('Invalid table selected');
         return;
       }
-      
+
       // Verify table exists
       const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${table.id}/`);
-      
+
       if (response && response.ok) {
         const currentTableData = await response.json();
         setManagingTable(currentTableData);
@@ -624,7 +650,7 @@ function TableManagementDashboard() {
       } else {
         throw new Error('Table no longer exists');
       }
-      
+
     } catch (error) {
       console.error('❌ Table access error:', error);
       toast.error('Table not found. Refreshing data...');
@@ -1215,16 +1241,18 @@ function TableManagementDashboard() {
   const canEditTables = ['admin', 'manager'].includes(user?.role);
   const canDeleteTables = user?.role === 'admin';
 
-  if (loading && tables.length === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <div className="text-lg">Loading table management...</div>
+ if (authLoading || loading || (!isAuthenticated && !error)) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <div className="text-lg">
+          {authLoading ? 'Authenticating...' : 'Loading table management...'}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -1376,7 +1404,7 @@ function TableManagementDashboard() {
             <div className="text-6xl mb-4">🏪</div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">No tables found</h2>
             <p className="text-gray-600 mb-6">No tables are currently configured for this restaurant.</p>
-            
+
             <div className="space-x-4">
               <button
                 onClick={loadInitialData}
@@ -1384,7 +1412,7 @@ function TableManagementDashboard() {
               >
                 🔄 Refresh Data
               </button>
-              
+
               {canCreateTables && (
                 <button
                   onClick={() => setShowCreateModal(true)}
@@ -2218,3 +2246,4 @@ function TableManagementDashboard() {
 }
 
 export default withRoleGuard(TableManagementDashboard, ['admin', 'staff']);
+

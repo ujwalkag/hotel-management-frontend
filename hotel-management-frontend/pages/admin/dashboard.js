@@ -153,9 +153,11 @@ function AdminDashboard() {
             <LinkCard href="/admin/bill-history" label="Bill History" />
             <LinkCard href="/admin/employees" label="Access Management" />
             <LinkCard href="/admin/staff-management" label="Staff Management" />
-	    <Link href="/admin/table-management">🏪 Table Management</Link>
-	    <Link href="/admin/mobile-ordering">📱 Mobile Ordering</Link>
-            <Link href="/admin/kitchen-display">🍳 Kitchen Display</Link>
+	    <LinkCard href="/admin/table-management" label="🏪 Table Management"/>
+	    <LinkCard href="/admin/mobile-ordering" label="📱 Mobile Ordering" />
+            <LinkCard href="/admin/kitchen-display" label="🍳 Kitchen Display" />
+	    <LinkCard href="/admin/advance-bookings" label="Advance Booking" />
+
 
           </div>
 

@@ -514,5 +514,5 @@ function KitchenDisplaySystem() {
     );
 }
 
-export default withRoleGuard(KitchenDisplaySystem, ['admin', 'kitchen_staff']);
+export default withRoleGuard(KitchenDisplaySystem, ['admin','staff','waiter']);
 

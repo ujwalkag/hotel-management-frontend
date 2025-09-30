@@ -10,7 +10,7 @@ function TakeOrders() {
   const { user, makeAuthenticatedRequest } = useAuth();
   const router = useRouter();
   const { table: preselectedTable } = router.query;
-  
+
   const [tables, setTables] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [selectedTable, setSelectedTable] = useState(preselectedTable || '');
@@ -33,15 +33,27 @@ function TakeOrders() {
   const loadInitialData = async () => {
     try {
       setLoading(true);
+
+      // ✅ FIXED: Get all tables first, then filter in frontend
       const [tablesRes, menuRes, categoriesRes] = await Promise.all([
-        makeAuthenticatedRequest('/api/restaurant/tables/?status=free,occupied'),
+        makeAuthenticatedRequest('/api/restaurant/tables/'), // REMOVED: ?status=free,occupied
         makeAuthenticatedRequest('/api/restaurant/menu-for-ordering/'),
         makeAuthenticatedRequest('/api/restaurant/menu-categories/')
       ]);
 
       if (tablesRes && tablesRes.ok) {
         const tablesData = await tablesRes.json();
-        setTables(Array.isArray(tablesData) ? tablesData : tablesData.tables || []);
+        const allTables = Array.isArray(tablesData) ? tablesData : tablesData.tables || [];
+
+        // ✅ FIXED: Filter for available tables (free and occupied) in frontend
+        const availableTables = allTables.filter(table =>
+          ['free', 'occupied'].includes(table.status) && table.is_active !== false
+        );
+
+        console.log('🔍 Debug - Total tables from API:', allTables.length);
+        console.log('🔍 Debug - Available tables after filter:', availableTables.length);
+
+        setTables(availableTables);
       }
 
       if (menuRes && menuRes.ok) {
@@ -100,7 +112,7 @@ function TakeOrders() {
       toast.error('Please select a table');
       return;
     }
-    
+
     if (selectedItems.length === 0) {
       toast.error('Please select items to order');
       return;
@@ -125,12 +137,12 @@ function TakeOrders() {
       if (response && response.ok) {
         const result = await response.json();
         toast.success(`✅ Order placed successfully! ${selectedItems.length} items ordered.`);
-        
+
         // Reset form
         setSelectedItems([]);
         setSearchQuery('');
         setSelectedCategory('');
-        
+
         // Show success message with order details
         const totalAmount = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         setTimeout(() => {
@@ -139,7 +151,7 @@ function TakeOrders() {
             duration: 4000
           });
         }, 1000);
-        
+
         // Show options to user
         setTimeout(() => {
           if (confirm('Order placed successfully! Go to Order Status or return to HOME?')) {
@@ -148,7 +160,7 @@ function TakeOrders() {
             router.push('/waiter/dashboard'); // HOME
           }
         }, 2000);
-        
+
       } else {
         const error = await response.json();
         toast.error(`Failed to place order: ${error.detail || 'Unknown error'}`);
@@ -163,14 +175,14 @@ function TakeOrders() {
 
   const filteredMenuItems = menuItems.filter(category => {
     if (selectedCategory && category.id.toString() !== selectedCategory) return false;
-    
+
     if (searchQuery) {
       return category.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-             category.items?.some(item => 
-               item.name.toLowerCase().includes(searchQuery.toLowerCase())
-             );
+        category.items?.some(item =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
     }
-    
+
     return true;
   }).map(category => ({
     ...category,
@@ -188,10 +200,10 @@ function TakeOrders() {
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-gray-900">📝 Take New Order</h1>
-            
+
             {/* PROMINENT HOME BUTTON */}
             <div className="flex items-center space-x-2">
-              <Link 
+              <Link
                 href="/waiter/dashboard"
                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold flex items-center animate-pulse"
               >
@@ -199,7 +211,7 @@ function TakeOrders() {
               </Link>
             </div>
           </div>
-          
+
           {/* Table Selection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -218,7 +230,7 @@ function TakeOrders() {
                 ))}
               </select>
             </div>
-            
+
             {/* Order Summary Card with HOME ACCESS */}
             <div className="bg-purple-50 rounded-lg p-4">
               <div className="flex justify-between items-center mb-2">
@@ -247,14 +259,14 @@ function TakeOrders() {
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold">Browse Menu</h2>
-            <Link 
-              href="/waiter/dashboard" 
+            <Link
+              href="/waiter/dashboard"
               className="bg-purple-100 hover:bg-purple-200 text-purple-800 px-3 py-1 rounded-full text-sm font-medium"
             >
               🏠 HOME
             </Link>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Search Items</label>
@@ -266,7 +278,7 @@ function TakeOrders() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Category</label>
               <select
@@ -300,7 +312,7 @@ function TakeOrders() {
                 <div className="text-4xl mb-4">🍽️</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No Items Found</h3>
                 <p className="text-gray-500 mb-4">Try adjusting your search or category filter.</p>
-                <Link 
+                <Link
                   href="/waiter/dashboard"
                   className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg"
                 >
@@ -316,7 +328,7 @@ function TakeOrders() {
                       <Link href="/waiter/dashboard" className="text-xs text-purple-600 hover:text-purple-800">🏠 HOME</Link>
                     </div>
                   </div>
-                  
+
                   <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {(category.items || []).map(item => (
@@ -341,11 +353,11 @@ function TakeOrders() {
                               )}
                             </div>
                           </div>
-                          
+
                           {item.description && (
                             <p className="text-sm text-gray-600 mb-2">{item.description}</p>
                           )}
-                          
+
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-gray-500">
                               🕒 {item.preparation_time || 15} mins
@@ -372,13 +384,13 @@ function TakeOrders() {
                   <Link href="/waiter/dashboard" className="text-xs text-purple-600 hover:text-purple-800">🏠 HOME</Link>
                 </div>
               </div>
-              
+
               <div className="p-6">
                 {selectedItems.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="text-4xl mb-4">🛒</div>
                     <p className="text-gray-500 mb-4">No items selected</p>
-                    <Link 
+                    <Link
                       href="/waiter/dashboard"
                       className="inline-block bg-purple-100 hover:bg-purple-200 text-purple-800 px-3 py-2 rounded text-sm"
                     >
@@ -398,7 +410,7 @@ function TakeOrders() {
                             ✕
                           </button>
                         </div>
-                        
+
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center space-x-2">
                             <button
@@ -417,12 +429,12 @@ function TakeOrders() {
                               +
                             </button>
                           </div>
-                          
+
                           <span className="font-medium text-green-600">
                             ₹{(item.price * item.quantity).toFixed(2)}
                           </span>
                         </div>
-                        
+
                         <textarea
                           value={item.special_instructions || ''}
                           onChange={(e) => updateItemInstructions(item.id, e.target.value)}
@@ -432,22 +444,22 @@ function TakeOrders() {
                         />
                       </div>
                     ))}
-                    
+
                     <div className="border-t pt-4">
                       <div className="flex justify-between items-center mb-4">
                         <span className="font-semibold">Total Amount:</span>
                         <span className="font-bold text-lg text-green-600">₹{totalAmount.toFixed(2)}</span>
                       </div>
-                      
+
                       {/* HOME BUTTON in Order Panel */}
                       <div className="space-y-2">
-                        <Link 
+                        <Link
                           href="/waiter/dashboard"
                           className="w-full bg-purple-100 hover:bg-purple-200 text-purple-800 py-2 px-4 rounded-lg font-medium text-center block"
                         >
                           🏠 Return HOME
                         </Link>
-                        
+
                         <button
                           onClick={submitOrder}
                           disabled={!selectedTable || selectedItems.length === 0 || loading}
@@ -476,3 +488,5 @@ function TakeOrders() {
 }
 
 export default withRoleGuard(TakeOrders, ['waiter']);
+
+
