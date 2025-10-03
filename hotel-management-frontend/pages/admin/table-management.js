@@ -1,4 +1,3 @@
-
 // pages/admin/table-management.js - COMPLETE UPDATED VERSION WITH ERROR HANDLING + AUTH FIX
 // This file contains ALL fixes for billing and manage orders functionality + Error Handling + Advanced Booking
 import { useState, useEffect, useRef } from 'react';
@@ -9,7 +8,7 @@ import toast from 'react-hot-toast';
 import AdminOrderManagement from '../../components/AdminOrderManagement';
 
 // BILLING ORDERS COMPONENT - Enhanced with error handling
-const BillingOrdersSection = ({ tableId }) => {
+const BillingOrdersSection = ({ tableId , billingData }) => {
   const [orders, setOrders] = useState([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -49,6 +48,17 @@ const BillingOrdersSection = ({ tableId }) => {
       setLoading(false);
     }
   };
+
+ const discountAmount = billingData.discount_amount || 0;
+const serviceCharge = billingData.service_charge || 0;
+const applyGst = billingData.apply_gst;
+const subtotal = orders.reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0);
+const taxableAmount = subtotal - discountAmount;
+const gstRate = applyGst ? 18 : 0;
+const gstAmount = (taxableAmount * gstRate) / 100;
+const cgstAmount = gstAmount / 2;
+const sgstAmount = gstAmount / 2;
+const finalTotal = taxableAmount + gstAmount + serviceCharge;
 
   if (loading) {
     return (
@@ -116,9 +126,9 @@ const BillingOrdersSection = ({ tableId }) => {
                   <span className={`px-2 py-1 rounded text-xs ${
                     order.status === 'served' ? 'bg-green-100 text-green-800' :
                     order.status === 'pending' ? 'bg-orange-100 text-orange-800' :
-                    order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                      order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                    }`}>
                     {order.status}
                   </span>
                   {order.special_instructions && (
@@ -150,26 +160,62 @@ const BillingOrdersSection = ({ tableId }) => {
           </div>
         </div>
 
-        {/* GST Breakdown */}
-        <div className="mt-4 p-3 bg-white rounded border">
-          <h4 className="font-semibold text-sm text-gray-700 mb-2">💰 GST Breakdown (18%)</h4>
-          <div className="text-xs text-gray-600 space-y-1">
+        {/* ✅ FIXED BILLING BREAKDOWN SECTION */}
+        <div className="mt-4 space-y-2">
+          {/* Discount */}
+          {discountAmount > 0 && (
             <div className="flex justify-between">
-              <span>Subtotal (before GST):</span>
-              <span>₹{(totalAmount / 1.18).toFixed(2)}</span>
+              <span>Discount:</span>
+              <span>-₹{discountAmount.toFixed(2)}</span>
             </div>
+          )}
+
+          {/* Taxable Amount */}
+          <div className="flex justify-between">
+            <span>Taxable Amount:</span>
+            <span>₹{taxableAmount.toFixed(2)}</span>
+          </div>
+
+          {/* Dynamic GST Breakdown or "Not Applied" */}
+          {applyGst ? (
+            <div className="mt-4 p-3 bg-white rounded border">
+              <h4 className="font-semibold text-sm text-gray-700 mb-2">
+                💰 GST Breakdown ({gstRate}%)
+              </h4>
+              <div className="text-xs text-gray-600 space-y-1">
+                <div className="flex justify-between">
+                  <span>CGST ({gstRate / 2}%):</span>
+                  <span>₹{cgstAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>SGST ({gstRate / 2}%):</span>
+                  <span>₹{sgstAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-1 font-semibold">
+                  <span>Total GST:</span>
+                  <span>₹{gstAmount.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-between mt-4">
+              <span>GST:</span>
+              <span>Not Applied</span>
+            </div>
+          )}
+
+          {/* Service Charge */}
+          {serviceCharge > 0 && (
             <div className="flex justify-between">
-              <span>CGST (9%):</span>
-              <span>₹{((totalAmount - totalAmount / 1.18) / 2).toFixed(2)}</span>
+              <span>Service Charge:</span>
+              <span>₹{serviceCharge.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between">
-              <span>SGST (9%):</span>
-              <span>₹{((totalAmount - totalAmount / 1.18) / 2).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between border-t pt-1 font-semibold">
-              <span>Total (Including GST):</span>
-              <span>₹{parseFloat(totalAmount).toFixed(2)}</span>
-            </div>
+          )}
+
+          {/* Grand Total */}
+          <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
+            <span>TOTAL AMOUNT:</span>
+            <span>₹{finalTotal.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -305,36 +351,37 @@ function TableManagementDashboard() {
     service_charge: 0,
     payment_method: 'cash',
     notes: '',
-    admin_notes: ''
+    admin_notes: '',
+    apply_gst: true
   });
 
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
 
-useEffect(() => {
-  // Only start loading when authentication state is determined
-  if (!authLoading) {
-    if (isAuthenticated) {
-      console.log('✅ User authenticated, loading data and connecting WebSocket');
-      connectWebSocket();
-      loadInitialData();
-    } else {
-      console.log('❌ User not authenticated, clearing data');
-      setTables([]);
-      setLoading(false);
-      setRefreshing(false);
+  useEffect(() => {
+    // Only start loading when authentication state is determined
+    if (!authLoading) {
+      if (isAuthenticated) {
+        console.log('✅ User authenticated, loading data and connecting WebSocket');
+        connectWebSocket();
+        loadInitialData();
+      } else {
+        console.log('❌ User not authenticated, clearing data');
+        setTables([]);
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }
-  
-  return () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-  };
-}, [isAuthenticated, authLoading]); // 🔥 CRITICAL: Add these dependencies
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [isAuthenticated, authLoading]); // 🔥 CRITICAL: Add these dependencies
 
 
   // Automatic error recovery
@@ -358,7 +405,7 @@ useEffect(() => {
         loadInitialData();
       }
     };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [loading, refreshing]);
@@ -451,17 +498,17 @@ useEffect(() => {
   const loadInitialData = async () => {
     try {
       if (authLoading) {
-      console.log('⏳ Authentication still loading, waiting...');
-      return;
-    }
+        console.log('⏳ Authentication still loading, waiting...');
+        return;
+      }
 
-    if (!isAuthenticated) {
-      console.log('🔒 User not authenticated, cannot load data');
-      setLoading(false);
-      setRefreshing(false);
-      setTables([]);
-      return;
-    }
+      if (!isAuthenticated) {
+        console.log('🔒 User not authenticated, cannot load data');
+        setLoading(false);
+        setRefreshing(false);
+        setTables([]);
+        return;
+      }
 
       setRefreshing(true);
       setError(null); // Clear previous errors
@@ -800,7 +847,9 @@ useEffect(() => {
           discount_percentage: billingData.discount_percentage,
           service_charge: billingData.service_charge,
           notes: billingData.notes,
-          admin_notes: billingData.admin_notes
+          admin_notes: billingData.admin_notes,
+          apply_gst: billingData.apply_gst
+
         })
       });
 
@@ -842,24 +891,46 @@ useEffect(() => {
         if (confirm('Billing completed! Would you like to print the detailed bill?')) {
           let sessionOrders = [];
 
-          if (billingTable.session_orders) {
-            sessionOrders = billingTable.session_orders;
-          } else if (billingTable.active_orders) {
-            sessionOrders = billingTable.active_orders;
-          } else {
-            try {
-              const sessionResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/session_orders/`);
-              if (sessionResponse && sessionResponse.ok) {
-                const sessionData = await sessionResponse.json();
-                sessionOrders = sessionData.orders || [];
-              }
-            } catch (error) {
-              console.error('Could not get session orders:', error);
+          // ✅ FIXED: Get orders from the API instead of cached data
+          try {
+            console.log('🔍 Fetching session orders from API...');
+            const sessionResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/current_bill/`);
+            if (sessionResponse && sessionResponse.ok) {
+              const sessionData = await sessionResponse.json();
+              sessionOrders = sessionData.orders || [];
+              console.log('🧾 Got orders from API for printing:', sessionOrders.length, 'orders');
+            } else {
+              console.error('Failed to get session orders from API, status:', sessionResponse?.status);
+              // Fallback: try to use result data
               sessionOrders = [];
+            }
+          } catch (error) {
+            console.error('Error getting session orders:', error);
+            sessionOrders = [];
+          }
+
+          // If still no orders, try to get from the manage_orders endpoint
+          if (sessionOrders.length === 0) {
+            try {
+              console.log('🔍 Trying manage_orders endpoint as fallback...');
+              const manageResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/manage_orders/`);
+              if (manageResponse && manageResponse.ok) {
+                const manageData = await manageResponse.json();
+                sessionOrders = manageData.orders || [];
+                console.log('🧾 Got orders from manage_orders:', sessionOrders.length, 'orders');
+              }
+            } catch (fallbackError) {
+              console.error('Fallback API call also failed:', fallbackError);
             }
           }
 
-          console.log('🧾 Printing orders for table:', sessionOrders);
+          if (sessionOrders.length === 0) {
+            toast.error('No orders found for printing. The bill may not have any items.');
+            console.error('❌ No orders available for printing');
+            return;
+          }
+
+          console.log('🧾 Printing bill with orders:', sessionOrders);
           await printDetailedBill(result, billingTable.table_number, sessionOrders);
         }
       } else {
@@ -956,7 +1027,8 @@ useEffect(() => {
       const serviceCharge = parseFloat(session.service_charge || 0);
       const taxableAmount = subtotal - discountAmount;
 
-      const gstRate = 18;
+      const applyGst = session.apply_gst !== false;  // comes from API
+      const gstRate = applyGst ? 18 : 0;
       const gstAmount = (taxableAmount * gstRate) / 100;
       const cgstAmount = gstAmount / 2;
       const sgstAmount = gstAmount / 2;
@@ -1126,22 +1198,16 @@ useEffect(() => {
               <span>₹${taxableAmount.toFixed(2)}</span>
             </div>
 
-            <!-- GST Breakdown -->
-            <div class="gst-section">
-              <div><strong>GST Breakdown (${gstRate}%):</strong></div>
-              <div class="row">
-                <span>CGST (${gstRate / 2}%):</span>
-                <span>₹${cgstAmount.toFixed(2)}</span>
-              </div>
-              <div class="row">
-                <span>SGST (${gstRate / 2}%):</span>
-                <span>₹${sgstAmount.toFixed(2)}</span>
-              </div>
-              <div class="row">
-                <span>Total GST:</span>
-                <span>₹${gstAmount.toFixed(2)}</span>
-              </div>
-            </div>
+           ${applyGst ? `
+  <div class="gst-section">
+    <div><strong>GST Breakdown (${gstRate}%):</strong></div>
+    <div class="row"><span>CGST (${gstRate / 2}%):</span><span>₹${cgstAmount.toFixed(2)}</span></div>
+    <div class="row"><span>SGST (${gstRate / 2}%):</span><span>₹${sgstAmount.toFixed(2)}</span></div>
+    <div class="row"><span>Total GST:</span><span>₹${gstAmount.toFixed(2)}</span></div>
+  </div>
+` : `
+  <div class="row"><span>GST:</span><span>Not Applied</span></div>
+`}
 
             ${serviceCharge > 0 ? `
             <div class="row">
@@ -1241,18 +1307,18 @@ useEffect(() => {
   const canEditTables = ['admin', 'manager'].includes(user?.role);
   const canDeleteTables = user?.role === 'admin';
 
- if (authLoading || loading || (!isAuthenticated && !error)) {
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <div className="text-lg">
-          {authLoading ? 'Authenticating...' : 'Loading table management...'}
+  if (authLoading || loading || (!isAuthenticated && !error)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="text-lg">
+            {authLoading ? 'Authenticating...' : 'Loading table management...'}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -1284,16 +1350,6 @@ useEffect(() => {
                   </button>
                 )}
 
-                {/* ADVANCED BOOKING LINK - ADMIN ONLY */}
-                {user?.role === 'admin' && (
-                  <Link
-                    href="/admin/bookings"
-                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
-                  >
-                    📅 Advanced Booking
-                  </Link>
-                )}
-
                 <Link
                   href="/admin/mobile-ordering"
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1302,7 +1358,7 @@ useEffect(() => {
                 </Link>
 
                 <Link
-                  href="/kitchen"
+                  href="/admin/kitchen-display"
                   className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
                 >
                   🍳 Kitchen Display
@@ -1492,12 +1548,11 @@ useEffect(() => {
                       {table.active_orders.slice(0, 3).map((order, index) => (
                         <div key={index} className="text-xs text-gray-600">
                           <span className="font-medium">{order.menu_item_name} x{order.quantity}</span>
-                          <span className={`ml-2 px-2 py-1 rounded ${
-                            order.status === 'pending' ? 'bg-orange-100 text-orange-600' :
+                          <span className={`ml-2 px-2 py-1 rounded ${order.status === 'pending' ? 'bg-orange-100 text-orange-600' :
                             order.status === 'preparing' ? 'bg-blue-100 text-blue-600' :
-                            order.status === 'ready' ? 'bg-green-100 text-green-600' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
+                              order.status === 'ready' ? 'bg-green-100 text-green-600' :
+                                'bg-gray-100 text-gray-600'
+                            }`}>
                             {order.status}
                           </span>
                         </div>
@@ -1574,7 +1629,7 @@ useEffect(() => {
             ))}
           </div>
         )}
-      </div>
+              </div>
 
       {/* ALL EXISTING MODALS - KEEPING THEM EXACTLY AS THEY ARE */}
       {/* Create Table Modal */}
@@ -1863,8 +1918,7 @@ useEffect(() => {
             <h2 className="text-xl font-bold mb-4">💳 Complete Billing - Table {billingTable.table_number}</h2>
 
             {/* Use the dedicated billing orders component with error handling */}
-            <BillingOrdersSection tableId={billingTable.id} />
-
+            <BillingOrdersSection tableId={billingTable.id} billingData={billingData} />
             {/* Customer Details Form */}
             <div className="mb-6">
               <h3 className="text-lg font-semibold mb-3">Customer Information</h3>
@@ -1970,6 +2024,22 @@ useEffect(() => {
                 <option value="mixed">🔄 Mixed Payment</option>
               </select>
             </div>
+
+            <div className="mt-4 flex items-center space-x-2">
+              <input
+                id="apply-gst"
+                type="checkbox"
+                checked={billingData.apply_gst}
+                onChange={e => setBillingData({ ...billingData, apply_gst: e.target.checked })}
+                className="h-4 w-4 text-purple-600 border-gray-300 rounded"
+              />
+              <label htmlFor="apply-gst" className="text-sm font-medium text-gray-700">
+                Apply GST (5%)
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Uncheck to exclude GST from the bill calculation
+            </p>
 
             {/* Notes */}
             <div className="mb-6">
