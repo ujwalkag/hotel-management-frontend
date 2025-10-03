@@ -829,38 +829,70 @@ function TableManagementDashboard() {
     }
   };
 
-  const completeBilling = async () => {
-    try {
-      if (!billingTable) return;
-      if (!billingData.customer_name.trim()) {
-        toast.error('Please enter customer name');
-        return;
+const completeBilling = async () => {
+  try {
+    if (!billingTable) return;
+
+    if (!billingData.customer_name.trim()) {
+      toast.error('Please enter customer name');
+      return;
+    }
+
+    // CRITICAL FIX: First fetch session orders to ensure we have data
+    console.log('🔍 Fetching session orders from API...');
+    const sessionResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/current_bill/`);
+
+    let sessionOrders = [];
+    if (sessionResponse && sessionResponse.ok) {
+      const sessionData = await sessionResponse.json();
+      console.log('🧾 Got orders from API for printing:', sessionData.orders?.length || 0, 'orders');
+      sessionOrders = sessionData.orders || [];
+    }
+
+    // FALLBACK: Try manage_orders endpoint if no session orders
+    if (sessionOrders.length === 0) {
+      console.log('🔍 Trying manage_orders endpoint as fallback...');
+      const fallbackResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/manage_orders/`);
+
+      if (fallbackResponse && fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        console.log('🧾 Got orders from manage_orders:', fallbackData.orders?.length || 0, 'orders');
+        sessionOrders = fallbackData.orders || [];
       }
+    }
 
-      const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/complete_billing/`, {
-        method: 'POST',
-        body: JSON.stringify({
-          customer_name: billingData.customer_name,
-          customer_phone: billingData.customer_phone,
-          payment_method: billingData.payment_method,
-          discount_amount: billingData.discount_amount,
-          discount_percentage: billingData.discount_percentage,
-          service_charge: billingData.service_charge,
-          notes: billingData.notes,
-          admin_notes: billingData.admin_notes,
-          apply_gst: billingData.apply_gst
+    // Check if we have orders to bill
+    if (sessionOrders.length === 0) {
+      console.log('❌ No orders available for printing');
+      toast.error('No orders found for this table. Please ensure orders are marked as served.');
+      return;
+    }
 
-        })
-      });
+    // Proceed with billing
+    const response = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/complete_billing/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        customer_name: billingData.customer_name,
+        customer_phone: billingData.customer_phone,
+        payment_method: billingData.payment_method,
+        discount_amount: billingData.discount_amount,
+        discount_percentage: billingData.discount_percentage,
+        service_charge: billingData.service_charge,
+        notes: billingData.notes,
+        admin_notes: billingData.admin_notes,
+        apply_gst: false, 
+        gst_rate: 0
+      })
+    });
 
-      if (response && response.ok) {
-        const result = await response.json();
-        toast.success(`✅ Billing completed! Total: ₹${result.final_amount}`);
+    if (response && response.ok) {
+      const result = await response.json();
+      toast.success(`✅ Billing completed! Total: ₹${result.final_amount}`);
 
-        // Update tables state
-        setTables(prev => prev.map(table =>
-          table.id === billingTable.id
-            ? {
+      // Update tables state
+      setTables(prev => prev.map(table =>
+        table.id === billingTable.id
+          ? {
               ...table,
               status: 'free',
               active_orders_count: 0,
@@ -869,80 +901,37 @@ function TableManagementDashboard() {
               can_bill: false,
               has_served_orders: false
             }
-            : table
-        ));
+          : table
+      ));
 
-        setShowBillModal(false);
-        setBillingTable(null);
-        setBillingData({
-          customer_name: '',
-          customer_phone: '',
-          discount_amount: 0,
-          discount_percentage: 0,
-          service_charge: 0,
-          payment_method: 'cash',
-          notes: '',
-          admin_notes: ''
-        });
+      setShowBillModal(false);
+      setBillingTable(null);
+      setBillingData({
+        customer_name: '',
+        customer_phone: '',
+        discount_amount: 0,
+        discount_percentage: 0,
+        service_charge: 0,
+        payment_method: 'cash',
+        notes: '',
+        admin_notes: ''
+      });
 
-        loadInitialData();
+      loadInitialData();
 
-        // Ask for print with enhanced details
-        if (confirm('Billing completed! Would you like to print the detailed bill?')) {
-          let sessionOrders = [];
-
-          // ✅ FIXED: Get orders from the API instead of cached data
-          try {
-            console.log('🔍 Fetching session orders from API...');
-            const sessionResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/current_bill/`);
-            if (sessionResponse && sessionResponse.ok) {
-              const sessionData = await sessionResponse.json();
-              sessionOrders = sessionData.orders || [];
-              console.log('🧾 Got orders from API for printing:', sessionOrders.length, 'orders');
-            } else {
-              console.error('Failed to get session orders from API, status:', sessionResponse?.status);
-              // Fallback: try to use result data
-              sessionOrders = [];
-            }
-          } catch (error) {
-            console.error('Error getting session orders:', error);
-            sessionOrders = [];
-          }
-
-          // If still no orders, try to get from the manage_orders endpoint
-          if (sessionOrders.length === 0) {
-            try {
-              console.log('🔍 Trying manage_orders endpoint as fallback...');
-              const manageResponse = await makeAuthenticatedRequest(`/api/restaurant/tables/${billingTable.id}/manage_orders/`);
-              if (manageResponse && manageResponse.ok) {
-                const manageData = await manageResponse.json();
-                sessionOrders = manageData.orders || [];
-                console.log('🧾 Got orders from manage_orders:', sessionOrders.length, 'orders');
-              }
-            } catch (fallbackError) {
-              console.error('Fallback API call also failed:', fallbackError);
-            }
-          }
-
-          if (sessionOrders.length === 0) {
-            toast.error('No orders found for printing. The bill may not have any items.');
-            console.error('❌ No orders available for printing');
-            return;
-          }
-
-          console.log('🧾 Printing bill with orders:', sessionOrders);
-          await printDetailedBill(result, billingTable.table_number, sessionOrders);
-        }
-      } else {
-        const error = await response.json();
-        toast.error(`❌ Failed to complete billing: ${error.error || 'Unknown error'}`);
+      // Ask for print with enhanced details
+      if (confirm('Billing completed! Would you like to print the detailed bill?')) {
+        await printDetailedBill(result, billingTable.table_number, sessionOrders);
       }
-    } catch (error) {
-      console.error('Error completing billing:', error);
-      toast.error('❌ Network error during billing');
+    } else {
+      const error = await response.json();
+      toast.error(`❌ Failed to complete billing: ${error.error || 'Unknown error'}`);
     }
-  };
-
+  } catch (error) {
+    console.error('Error completing billing:', error);
+    toast.error('❌ Network error during billing');
+  }
+};
   // Menu Functions
   const loadMenuItems = async () => {
     try {

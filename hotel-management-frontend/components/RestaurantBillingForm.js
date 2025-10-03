@@ -1,4 +1,3 @@
-
 // components/RestaurantBillingForm.js - ENHANCED WITH D-MART & CUSTOMER HANDLING
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -20,14 +19,14 @@ function RestaurantBillingForm() {
   // Enhanced customer information with optional fields
   const [customerInfo, setCustomerInfo] = useState({
     name: "Guest",
-    phone: "+91",
+    phone: " ",
     email: "",
     address: ""
   });
 
   // Enhanced GST and pricing settings
   const [billingSettings, setBillingSettings] = useState({
-    includeGST: true,
+    includeGST: false,
     gstRate: 18,
     interstate: false,
     discountPercent: 0,
@@ -305,8 +304,7 @@ function RestaurantBillingForm() {
       timestamp: new Date().toISOString()
     });
   };
-
-  // Generate final D-mart style bill - ENHANCED TO USE CORRECT ENDPOINTS
+  // Generate final D-mart style bill - FIXED TO MATCH BACKEND EXPECTATIONS
   const handleGenerateBill = async () => {
     if (selectedItems.length === 0) {
       toast.error("Please select at least one item");
@@ -319,44 +317,68 @@ function RestaurantBillingForm() {
     const finalCustomerName = customerInfo.name.trim() || 'Guest';
     const finalCustomerPhone = customerInfo.phone.trim() || '';
 
-    // Prepare payload for enhanced billing endpoint
+    // FIXED: Prepare payload to match backend expectations exactly
     const payload = {
-   customer_name: finalCustomerName,
-   customer_phone: finalCustomerPhone,
-   payment_method: billingSettings.paymentMethod,
+      customer_name: finalCustomerName,
+      customer_phone: finalCustomerPhone,
+      customer_email: customerInfo.email || '',
+      payment_method: billingSettings.paymentMethod,
 
-   // Only these two fields per item:
-   items: selectedItems.map(item => ({
-     item_id: item.id,
-     quantity: item.quantity,
-   })),
+      // CRITICAL FIX: Send items in the format backend expects
+      items: selectedItems.map(item => ({
+        item_id: item.isCustom ? null : item.id,
+        item_name: item.isCustom ? item.name : null,
+        quantity: item.quantity,
+        price: item.selectedPrice,
+        discount: item.itemDiscount || 0,
+        notes: item.notes || ''
+      })),
 
-   apply_gst: billingSettings.includeGST,
-   discount_amount: billingSettings.discountAmount,
-   discount_percentage: billingSettings.discountPercent,
+      // GST and pricing settings - match backend field names
+      apply_gst: billingSettings.includeGST,
+      gst_rate: billingSettings.gstRate, 
+      interstate: billingSettings.interstate,
+      discount_percent: billingSettings.discountPercent,
+      discount_amount: billingSettings.discountAmount,
 
-   // Optional:
-   service_charge: billingSettings.serviceCharge || 0,
-   notify_customer: billingSettings.notifyCustomer || false,
- };
+      // Additional details
+      table_number: billingSettings.tableNumber,
+      special_instructions: billingSettings.specialInstructions,
+
+      // Calculated totals for verification
+      subtotal: billCalculation.subtotal,
+      total_amount: billCalculation.total
+    };
+    console.log('GST Settings being sent:', {
+      apply_gst: billingSettings.includeGST,
+      gst_rate: billingSettings.gstRate,
+      interstate: billingSettings.interstate
+    });
     try {
-      // Try enhanced billing first, then fallback to regular
-      let res = await fetch("/api/bills/create/restaurant/", {
+      // FIXED: Use correct Content-Type and error handling
+      const res = await fetch("/api/bills/create/restaurant/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${user.access}`,
+          "Accept": "application/json"  // Explicitly request JSON response
         },
         body: JSON.stringify(payload),
       });
 
+      // CRITICAL FIX: Check if response is JSON before parsing
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Server returned non-JSON response. Check server logs for details.");
+      }
+
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || data.detail || "Failed to generate bill");
+        throw new Error(data.error || data.detail || `HTTP ${res.status}: ${data.message || 'Unknown error'}`);
       }
 
-      // Success notification with D-mart style details
+      // Success notification with enhanced details
       toast.success(
         `✅ D-mart Style Bill Generated!\n` +
         `Receipt: ${data.receipt_number || 'GENERATED'}\n` +
@@ -374,29 +396,128 @@ function RestaurantBillingForm() {
       );
 
       // Reset form
-      setSelectedItems([]);
-      setCustomerInfo({ name: "Guest", phone: "", email: "", address: "" });
-      setBillingSettings(prev => ({
-        ...prev,
-        discountPercent: 0,
-        discountAmount: 0,
-        specialInstructions: ''
-      }));
+ // Reset form
+setSelectedItems([]);
+setCustomerInfo({ name: "Guest", phone: "", email: "", address: "" });  // ✅ Empty phone
+setBillingSettings(prev => ({
+  ...prev,
+  includeGST: false,  // ✅ Reset GST to OFF
+  discountPercent: 0,
+  discountAmount: 0,
+  specialInstructions: ''
+}));
       setBillPreview(null);
 
       // Navigate to bill details if available
       if (data.bill_id) {
-        router.push(`/admin/billing/${data.bill_id}`);
+        printBillReceipt(data, finalCustomerName, selectedItems, billCalculation);
       }
 
     } catch (error) {
       console.error('Bill generation error:', error);
-      toast.error(`Error generating bill: ${error.message}`);
+
+      // Enhanced error messaging
+      let errorMessage = error.message;
+      if (errorMessage.includes("non-JSON response")) {
+        errorMessage = "Server configuration error. Please contact administrator.";
+      } else if (errorMessage.includes("Failed to fetch")) {
+        errorMessage = "Network error. Please check your connection and try again.";
+      }
+
+      toast.error(`❌ Error generating bill: ${errorMessage}`, {
+        duration: 8000,
+        style: {
+          background: '#EF4444',
+          color: 'white'
+        }
+      });
     } finally {
       setLoading(false);
     }
   };
+  // Add this function for print receipt functionality
+  const printBillReceipt = (billData, customerName, items, calculation) => {
+    const now = new Date();
+    const billDate = now.toLocaleDateString('en-IN');
+    const billTime = now.toLocaleTimeString('en-IN');
 
+    const printContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Receipt - ${billData.receipt_number}</title>
+      <style>
+        @media print { body { margin: 0; } .no-print { display: none; } }
+        body { font-family: 'Courier New', monospace; font-size: 12px; max-width: 300px; margin: 0 auto; padding: 10px; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+        .item-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+        .total-row { border-top: 1px dashed #000; padding-top: 5px; font-weight: bold; }
+        .thank-you { text-align: center; margin-top: 10px; border-top: 1px dashed #000; padding-top: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h2>HOTEL RESTAURANT</h2>
+        <p>Complete Dining Experience</p>
+        <p>Receipt #: ${billData.receipt_number || 'N/A'}</p>
+        <p>Date: ${billDate} ${billTime}</p>
+      </div>
+
+      <div class="bill-info">
+        <p><strong>Customer:</strong> ${customerName}</p>
+        ${billingSettings.tableNumber ? `<p><strong>Table:</strong> ${billingSettings.tableNumber}</p>` : ''}
+        <p><strong>Payment:</strong> ${billingSettings.paymentMethod.toUpperCase()}</p>
+      </div>
+
+      <div class="items">
+        <p><strong>ITEMS ORDERED:</strong></p>
+        ${items.map(item => `
+          <div class="item-row">
+            <span>${item.name || item.item_name} x${item.quantity}</span>
+            <span>₹${((item.selectedPrice || item.price) * item.quantity).toFixed(2)}</span>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="totals">
+        <div class="item-row">
+          <span>Subtotal:</span>
+          <span>₹${calculation.subtotal.toFixed(2)}</span>
+        </div>
+        ${calculation.gstAmount > 0 ? `
+          <div class="item-row">
+            <span>GST (${billingSettings.gstRate}%):</span>
+            <span>₹${calculation.gstAmount.toFixed(2)}</span>
+          </div>
+        ` : ''}
+        <div class="item-row total-row">
+          <span>TOTAL:</span>
+          <span>₹${calculation.total.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div class="thank-you">
+        <p><strong>PAID</strong></p>
+        <p>Thank you for dining with us!</p>
+        <p>Visit again soon!</p>
+      </div>
+
+      <div class="no-print" style="text-align: center; margin-top: 20px;">
+        <button onclick="window.print()">🖨️ Print Receipt</button>
+        <button onclick="window.close()">Close</button>
+      </div>
+    </body>
+    </html>
+  `;
+
+    // Open print window and auto-print
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+
+    toast.success('📄 Receipt opened for printing!', { icon: '🖨️' });
+  };
   if (loading && selectedItems.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -999,5 +1120,6 @@ function RestaurantBillingForm() {
 }
 
 export default RestaurantBillingForm;
+
 
 
