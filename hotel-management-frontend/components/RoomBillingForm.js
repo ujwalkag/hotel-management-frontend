@@ -8,7 +8,7 @@ export default function RoomBillingForm() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const router = useRouter();
-
+  
   const [rooms, setRooms] = useState([]);
   const [form, setForm] = useState({
     customer_name: "",
@@ -19,9 +19,11 @@ export default function RoomBillingForm() {
     apply_gst: false,
   });
   const [loading, setLoading] = useState(false);
+  const [billData, setBillData] = useState(null); // Store bill data for printing
 
-  const role = user?.role || "staff"; // Role fallback for safety
+  const role = user?.role || "staff";
 
+  // Calculate GST rate based on subtotal
   const gstRate = (() => {
     const subtotal = form.items.reduce((sum, it) => {
       const r = rooms.find((r) => r.id === +it.room);
@@ -37,6 +39,7 @@ export default function RoomBillingForm() {
     const r = rooms.find((r) => r.id === +it.room);
     return sum + (r?.price_per_day || 0) * it.days;
   }, 0);
+
   const gstAmount = +(subtotal * gstRate).toFixed(2);
   const total = +(subtotal + gstAmount).toFixed(2);
 
@@ -49,10 +52,20 @@ export default function RoomBillingForm() {
       const res = await fetch("/api/rooms/types/", {
         headers: { Authorization: `Bearer ${user.access}` },
       });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
       setRooms(Array.isArray(data) ? data : data.results || []);
-    } catch {
-      toast.error(language === "hi" ? "कमरे लोड नहीं हो पाए" : "Failed to load rooms");
+    } catch (error) {
+      console.error("Error fetching rooms:", error);
+      toast.error(
+        language === "hi" ? 
+        "कमरे लोड नहीं हो पाए" : 
+        "Failed to load rooms"
+      );
     }
   }
 
@@ -77,95 +90,286 @@ export default function RoomBillingForm() {
     }));
   }
 
+  // 🔧 ENHANCED: Better error handling and data validation
   async function handleGenerateBill() {
     const { customer_name, customer_phone, payment_method, items } = form;
-    if (
-      !customer_name ||
-      !customer_phone ||
-      !payment_method ||
-      items.some((it) => !it.room)
-    ) {
+    
+    // Enhanced validation
+    if (!customer_name.trim()) {
       return toast.error(
-        language === "hi" 
-          ? "सभी फ़ील्ड भरें और कमरे चुनें" 
-          : "Fill all fields and select rooms"
+        language === "hi" ? 
+        "ग्राहक का नाम आवश्यक है" : 
+        "Customer name is required"
+      );
+    }
+    
+    if (!customer_phone.trim()) {
+      return toast.error(
+        language === "hi" ? 
+        "ग्राहक का फोन नंबर आवश्यक है" : 
+        "Customer phone is required"
+      );
+    }
+    
+    if (!payment_method) {
+      return toast.error(
+        language === "hi" ? 
+        "भुगतान का तरीका चुनें" : 
+        "Please select payment method"
+      );
+    }
+    
+    if (items.some((it) => !it.room)) {
+      return toast.error(
+        language === "hi" ? 
+        "सभी कमरे चुनें" : 
+        "Please select all rooms"
       );
     }
 
     setLoading(true);
-
-    // ✅ FIXED: Create correct payload structure for backend
+    
+    // ✅ ENHANCED: Proper payload structure with validation
     const payload = {
-      customer_name: form.customer_name,
-      customer_phone: form.customer_phone,
-      aadhaar_card: form.aadhaar_card || "",
-      payment_method: form.payment_method,
+      customer_name: customer_name.trim(),
+      customer_phone: customer_phone.trim(),
+      aadhaar_card: form.aadhaar_card.trim() || "",
+      payment_method: payment_method,
       apply_gst: form.apply_gst,
-      items: form.items.map(({ room, days }) => ({
+      items: items.map(({ room, days }) => ({
         room: parseInt(room), // Ensure it's a number
-        quantity: days, // Backend expects 'quantity', not 'days'
+        quantity: parseInt(days), // Backend expects 'quantity', not 'days'
       })),
     };
 
     try {
+      console.log("🚀 Sending payload:", payload); // Debug logging
+      
       const res = await fetch("/api/bills/create/room/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${user.access}`,
         },
-        body: JSON.stringify(payload), // Use the corrected payload
+        body: JSON.stringify(payload),
       });
+
+      // 🔧 ENHANCED: Better error handling for different response types
+      let data;
+      const contentType = res.headers.get("content-type");
       
-      const data = await res.json();
-      
-      if (!res.ok) {
-        console.error("Backend error:", data);
-        throw new Error(data.error || data.detail || "Error creating bill");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        // Handle HTML error responses (500 errors)
+        const htmlText = await res.text();
+        console.error("Received HTML instead of JSON:", htmlText);
+        throw new Error(
+          language === "hi" ? 
+          "सर्वर त्रुटि - कृपया व्यवस्थापक से संपर्क करें" : 
+          "Server error - please contact administrator"
+        );
       }
 
+      if (!res.ok) {
+        console.error("Backend error:", data);
+        throw new Error(
+          data.error || 
+          data.detail || 
+          `HTTP ${res.status}: ${res.statusText}`
+        );
+      }
+
+      // Store bill data for printing
+      setBillData({
+        ...data,
+        items: items.map(item => {
+          const room = rooms.find(r => r.id === parseInt(item.room));
+          return {
+            name: room ? `${room.type_en} / ${room.type_hi}` : 'Unknown Room',
+            quantity: item.days,
+            price: room?.price_per_day || 0,
+            total: (room?.price_per_day || 0) * item.days
+          };
+        }),
+        subtotal: subtotal,
+        gst_amount: gstAmount,
+        total_amount: total
+      });
+
+      // Success notification
       toast.success(
-        language === "hi" 
-          ? `बिल बना: ${data.receipt_number || data.bill_id}` 
-          : `Bill created: ${data.receipt_number || data.bill_id}`
+        language === "hi" ? 
+        `बिल बना: ${data.receipt_number || data.bill_id}` : 
+        `Bill created: ${data.receipt_number || data.bill_id}`,
+        { 
+          duration: 5000,
+          style: {
+            background: '#10B981',
+            color: 'white',
+            fontWeight: 'bold'
+          }
+        }
       );
-      
+
+      // Reset form
+      setForm({
+        customer_name: "",
+        customer_phone: "",
+        aadhaar_card: "",
+        payment_method: "cash",
+        items: [{ room: "", days: 1 }],
+        apply_gst: false,
+      });
+
       // Navigate to bill detail page
-      router.push(`/bills/${data.bill_id || data.id}`);
-      
+      if (data.bill_id) {
+        router.push(`/bills/${data.bill_id}`);
+      }
+
     } catch (error) {
       console.error("Bill creation error:", error);
       toast.error(
-        language === "hi" 
-          ? "बिल बनाने में त्रुटि" 
-          : "Error creating bill"
+        language === "hi" ? 
+        `बिल बनाने में त्रुटि: ${error.message}` : 
+        `Error creating bill: ${error.message}`,
+        { duration: 7000 }
       );
     } finally {
       setLoading(false);
     }
   }
 
+  // 🆕 NEW: DMart-style bill printing function
+  const printDetailedBill = () => {
+    if (!billData || !billData.items) {
+      toast.error("No bill data available for printing");
+      return;
+    }
+
+    try {
+      const printWindow = window.open('', '_blank');
+      const printContent = generateDMartStyleReceipt(billData);
+      
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+      
+      toast.success("Bill sent to printer!");
+    } catch (error) {
+      console.error("Print error:", error);
+      toast.error("Error printing bill");
+    }
+  };
+
+  // 🆕 NEW: Generate DMart-style receipt HTML
+  const generateDMartStyleReceipt = (billData) => {
+    const now = new Date();
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Receipt - ${billData.receipt_number}</title>
+        <style>
+            @page { margin: 0; }
+            body { 
+                font-family: 'Courier New', monospace; 
+                font-size: 12px; 
+                line-height: 1.2; 
+                margin: 0; 
+                padding: 10px;
+                width: 80mm; /* Standard thermal printer width */
+            }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .line { border-bottom: 1px dashed #000; margin: 5px 0; }
+            .item-row { display: flex; justify-content: space-between; }
+            .total-section { margin-top: 10px; border-top: 1px dashed #000; padding-top: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="center bold">
+            HOTEL R SHAMMAD
+        </div>
+        <div class="center">
+            Room Booking Receipt
+        </div>
+        <div class="line"></div>
+        
+        <div>Receipt: ${billData.receipt_number}</div>
+        <div>Date: ${now.toLocaleDateString()}</div>
+        <div>Time: ${now.toLocaleTimeString()}</div>
+        <div>Customer: ${billData.customer_name}</div>
+        <div>Phone: ${billData.customer_phone}</div>
+        <div>Payment: ${billData.payment_method.toUpperCase()}</div>
+        
+        <div class="line"></div>
+        
+        ${billData.items.map(item => `
+            <div>${item.name}</div>
+            <div class="item-row">
+                <span>${item.quantity} x ₹${item.price}</span>
+                <span>₹${item.total.toFixed(2)}</span>
+            </div>
+        `).join('')}
+        
+        <div class="line"></div>
+        
+        <div class="item-row">
+            <span>Subtotal:</span>
+            <span>₹${billData.subtotal.toFixed(2)}</span>
+        </div>
+        
+        ${billData.gst_amount > 0 ? `
+        <div class="item-row">
+            <span>GST (${billData.gst_rate}%):</span>
+            <span>₹${billData.gst_amount.toFixed(2)}</span>
+        </div>
+        ` : ''}
+        
+        <div class="total-section">
+            <div class="item-row bold">
+                <span>TOTAL:</span>
+                <span>₹${billData.total_amount.toFixed(2)}</span>
+            </div>
+        </div>
+        
+        <div class="line"></div>
+        <div class="center">
+            Thank you for staying with us!
+        </div>
+        <div class="center">
+            Visit again soon!
+        </div>
+    </body>
+    </html>
+    `;
+  };
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">
-        {role === "admin"
+    <div className="container mx-auto p-6 max-w-4xl">
+      <h1 className="text-3xl font-bold mb-6 text-center">
+        {role === "admin" 
           ? language === "hi" 
             ? "🧾 एडमिन रूम बिलिंग" 
-            : "🧾 Admin Room Billing"
+            : "🧾 Admin Room Billing" 
           : language === "hi" 
             ? "🧾 स्टाफ रूम बिलिंग" 
-            : "🧾 Staff Room Billing"
+            : "🧾 Staff Room Billing" 
         }
       </h1>
 
       {/* Customer Details */}
-      <div className="space-y-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <input
           type="text"
           placeholder={language === "hi" ? "ग्राहक का नाम" : "Customer Name"}
           value={form.customer_name}
           onChange={(e) => updateField("customer_name", e.target.value)}
           className="border px-3 py-2 rounded w-full"
+          required
         />
         <input
           type="text"
@@ -173,6 +377,7 @@ export default function RoomBillingForm() {
           value={form.customer_phone}
           onChange={(e) => updateField("customer_phone", e.target.value)}
           className="border px-3 py-2 rounded w-full"
+          required
         />
         <input
           type="text"
@@ -186,6 +391,7 @@ export default function RoomBillingForm() {
           value={form.payment_method}
           onChange={(e) => updateField("payment_method", e.target.value)}
           className="border px-3 py-2 rounded w-full"
+          required
         >
           <option value="cash">{language === "hi" ? "नकद" : "Cash"}</option>
           <option value="card">{language === "hi" ? "कार्ड" : "Card"}</option>
@@ -195,97 +401,111 @@ export default function RoomBillingForm() {
       </div>
 
       {/* Room Selection */}
-      <h2 className="text-xl font-semibold mb-2">
-        {language === "hi" ? "कमरे चुनें" : "Select Rooms"}
-      </h2>
-      {form.items.map((it, idx) => (
-        <div key={idx} className="grid grid-cols-4 gap-4 mb-4">
-          <select
-            value={it.room}
-            onChange={(e) => updateItem(idx, "room", e.target.value)}
-            className="border px-3 py-2 rounded col-span-2"
-            required
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold mb-4">
+          {language === "hi" ? "कमरे चुनें" : "Select Rooms"}
+        </h2>
+        <div className="space-y-4">
+          {form.items.map((it, idx) => (
+            <div key={idx} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+              <select
+                value={it.room}
+                onChange={(e) => updateItem(idx, "room", e.target.value)}
+                className="border px-3 py-2 rounded col-span-2"
+                required
+              >
+                <option value="">
+                  {language === "hi" ? "कमरा चुनें" : "Select Room"}
+                </option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {language === "hi" ? r.type_hi : r.type_en} - ₹{r.price_per_day}/
+                    {language === "hi" ? "दिन" : "day"}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                value={it.days}
+                onChange={(e) => updateItem(idx, "days", e.target.value)}
+                className="border px-3 py-2 rounded"
+                placeholder={language === "hi" ? "दिन" : "Days"}
+              />
+              {form.items.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeItem(idx)}
+                  className="bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600"
+                >
+                  {language === "hi" ? "हटाएं" : "Remove"}
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addItem}
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
           >
-            <option value="">
-              {language === "hi" ? "कमरा चुनें" : "Select Room"}
-            </option>
-            {rooms.map((r) => (
-              <option key={r.id} value={r.id}>
-                {language === "hi" ? r.type_hi : r.type_en} - ₹{r.price_per_day}/
-                {language === "hi" ? "दिन" : "day"}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min={1}
-            value={it.days}
-            onChange={(e) => updateItem(idx, "days", e.target.value)}
-            className="border px-3 py-2 rounded"
-            placeholder={language === "hi" ? "दिन" : "Days"}
-          />
-          {form.items.length > 1 && (
-            <button 
-              type="button" 
-              onClick={() => removeItem(idx)} 
-              className="text-red-600 hover:text-red-800"
-            >
-              {language === "hi" ? "हटाएँ" : "Remove"}
-            </button>
-          )}
+            {language === "hi" ? "कमरा जोड़ें" : "Add Room"}
+          </button>
         </div>
-      ))}
-      
-      <button 
-        type="button" 
-        onClick={addItem} 
-        className="bg-green-500 text-white px-4 py-2 rounded mb-6 hover:bg-green-600"
-      >
-        {language === "hi" ? "+ और जोड़ें" : "+ Add More"}
-      </button>
+      </div>
 
       {/* GST Toggle */}
-      <div className="flex items-center mb-4">
-        <input
-          type="checkbox"
-          checked={form.apply_gst}
-          onChange={(e) => updateField("apply_gst", e.target.checked)}
-          className="mr-2"
-        />
-        <label>
-          {language === "hi" 
-            ? `जीएसटी लागू करें (${(gstRate * 100).toFixed(0)}%)` 
-            : `Apply GST (${(gstRate * 100).toFixed(0)}%)`
-          }
+      <div className="mb-6">
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={form.apply_gst}
+            onChange={(e) => updateField("apply_gst", e.target.checked)}
+            className="mr-2"
+          />
+          <span>
+            {language === "hi" 
+              ? `जीएसटी लागू करें (${(gstRate * 100).toFixed(0)}%)` 
+              : `Apply GST (${(gstRate * 100).toFixed(0)}%)`
+            }
+          </span>
         </label>
       </div>
 
       {/* Bill Summary */}
-      <div className="text-right mb-4 p-4 bg-gray-50 rounded">
-        <p className="text-gray-700">
+      <div className="bg-gray-100 p-4 rounded mb-6">
+        <div className="text-lg">
           {language === "hi" ? "उप-योग" : "Subtotal"}: ₹{subtotal.toFixed(2)}
-        </p>
-        <p className="text-gray-700">
+        </div>
+        <div className="text-lg">
           {language === "hi" ? "जीएसटी" : "GST"}: ₹{gstAmount.toFixed(2)}
-        </p>
-        <p className="text-xl font-bold">
+        </div>
+        <div className="text-xl font-bold">
           {language === "hi" ? "कुल" : "Total"}: ₹{total.toFixed(2)}
-        </p>
+        </div>
       </div>
 
-      {/* Generate Bill Button */}
-      <button 
-        onClick={handleGenerateBill} 
-        disabled={loading || form.items.some(it => !it.room)}
-        className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50 w-full"
-      >
-        {loading ? (
-          language === "hi" ? "बनाया जा रहा..." : "Generating..."
-        ) : (
-          language === "hi" ? "➕ रूम बिल बनाएँ" : "➕ Generate Room Bill"
+      {/* Action Buttons */}
+      <div className="flex gap-4">
+        <button
+          onClick={handleGenerateBill}
+          disabled={loading}
+          className="bg-green-500 text-white px-6 py-3 rounded text-lg hover:bg-green-600 disabled:opacity-50 flex-1"
+        >
+          {loading 
+            ? (language === "hi" ? "बिल बनाया जा रहा है..." : "Creating Bill...")
+            : (language === "hi" ? "बिल बनाएं" : "Generate Bill")
+          }
+        </button>
+        
+        {billData && (
+          <button
+            onClick={printDetailedBill}
+            className="bg-blue-500 text-white px-6 py-3 rounded text-lg hover:bg-blue-600"
+          >
+            {language === "hi" ? "बिल प्रिंट करें" : "Print Bill"}
+          </button>
         )}
-      </button>
+      </div>
     </div>
   );
 }
-
