@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 function MenuManagement() {
     const { user } = useAuth();
     const { language } = useLanguage();
-    
+
     const [categories, setCategories] = useState([]);
     const [menuItems, setMenuItems] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState("");
@@ -58,7 +58,7 @@ function MenuManagement() {
             const res = await fetch("/api/restaurant/menu-categories/", {
                 headers: { Authorization: `Bearer ${user.access}` },
             });
-            
+
             if (res.ok) {
                 const data = await res.json();
                 setCategories(data);
@@ -76,7 +76,7 @@ function MenuManagement() {
             const res = await fetch("/api/restaurant/menu-items/", {
                 headers: { Authorization: `Bearer ${user.access}` },
             });
-            
+
             if (res.ok) {
                 const data = await res.json();
                 setMenuItems(data);
@@ -90,34 +90,33 @@ function MenuManagement() {
     };
 
     const handleCreateItem = async () => {
-        if (!newItem.name_en || !newItem.price) {
-            toast.error("Please fill required fields");
+        if (!newItem.name_en || !newItem.price || !newItem.category_id) {
+            toast.error("Please fill required fields (English name, price, and category)");
             return;
         }
 
         try {
+            const payload = {
+                name_en: newItem.name_en.trim(),
+                name_hi: newItem.name_hi.trim() || newItem.name_en.trim(),
+                description_en: newItem.description_en.trim(),
+                description_hi: newItem.description_hi.trim() || newItem.description_en.trim(),
+                price: parseFloat(newItem.price),
+                category_id: parseInt(newItem.category_id, 10),
+                preparation_time: newItem.preparation_time,
+                is_veg: newItem.is_veg,
+                is_spicy: newItem.is_spicy,
+                allergens: newItem.allergens,
+                available: newItem.available,
+            };
+
             const res = await fetch("/api/restaurant/menu-items/", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${user.access}`,
                 },
-                  body: JSON.stringify({
-    			name: newItem.name_en,
-			category: newItem.category_id,
-    			name_en: newItem.name_en,
-    			name_hi: newItem.name_hi,
-    			description_en: newItem.description_en,
-    			description_hi: newItem.description_hi,
-    			price: parseFloat(newItem.price),
-    			//category: parseInt(newItem.category_id, 10),
-    			preparation_time: newItem.preparation_time,
-    			is_veg: newItem.is_veg,
-    			is_spicy: newItem.is_spicy,
-    			allergens: newItem.allergens,
-    			available: newItem.available,
-		  }),
-
+                body: JSON.stringify(payload),
             });
 
             if (res.ok) {
@@ -139,7 +138,8 @@ function MenuManagement() {
                 fetchMenuItems();
             } else {
                 const errorData = await res.json();
-                toast.error(`Failed to create item: ${errorData.error || 'Unknown error'}`);
+                console.error('Create error:', errorData);
+                toast.error(`Failed to create item: ${JSON.stringify(errorData)}`);
             }
         } catch (error) {
             console.error('Error creating item:', error);
@@ -148,30 +148,33 @@ function MenuManagement() {
     };
 
     const handleUpdateItem = async () => {
-        if (!editingItem) return;
+        if (!editingItem || !editingItem.name_en || !editingItem.price) {
+            toast.error("Please fill required fields");
+            return;
+        }
 
         try {
+            const payload = {
+                name_en: editingItem.name_en.trim(),
+                name_hi: editingItem.name_hi?.trim() || editingItem.name_en.trim(),
+                description_en: editingItem.description_en?.trim() || "",
+                description_hi: editingItem.description_hi?.trim() || editingItem.description_en?.trim() || "",
+                price: parseFloat(editingItem.price),
+                category_id: parseInt(editingItem.category_id || editingItem.category?.id, 10),
+                preparation_time: editingItem.preparation_time || 15,
+                is_veg: editingItem.is_veg,
+                is_spicy: editingItem.is_spicy,
+                allergens: editingItem.allergens || "",
+                available: editingItem.available,
+            };
+
             const res = await fetch(`/api/restaurant/menu-items/${editingItem.id}/`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${user.access}`,
                 },
-                 body: JSON.stringify({
-			name: editingItem.name_en,      
-			category: editingItem.category_id,  
-        		name_en: editingItem.name_en,
-        		name_hi: editingItem.name_hi,
-        		description_en: editingItem.description_en,
-        		description_hi: editingItem.description_hi,
-        		price: parseFloat(editingItem.price),
-        		//category: parseInt(editingItem.category_id || (editingItem.category?.id), 10),
-        		preparation_time: editingItem.preparation_time,
-        		is_veg: editingItem.is_veg,
-        		is_spicy: editingItem.is_spicy,
-        		allergens: editingItem.allergens,
-        		available: editingItem.available,
-      		}),
+                body: JSON.stringify(payload),
             });
 
             if (res.ok) {
@@ -180,7 +183,8 @@ function MenuManagement() {
                 fetchMenuItems();
             } else {
                 const errorData = await res.json();
-                toast.error(`Failed to update item: ${errorData.error || 'Unknown error'}`);
+                console.error('Update error:', errorData);
+                toast.error(`Failed to update item: ${JSON.stringify(errorData)}`);
             }
         } catch (error) {
             console.error('Error updating item:', error);
@@ -211,23 +215,25 @@ function MenuManagement() {
 
     const handleCreateCategory = async () => {
         if (!newCategory.name_en) {
-            toast.error("Please enter category name");
+            toast.error("Please enter English category name");
             return;
         }
 
         try {
+            const payload = {
+                name: newCategory.name_en.trim(),
+                name_en: newCategory.name_en.trim(),
+                name_hi: newCategory.name_hi.trim() || newCategory.name_en.trim(),
+                description: newCategory.description || ""
+            };
+
             const res = await fetch("/api/restaurant/menu-categories/", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${user.access}`,
                 },
-                body: JSON.stringify({
-  			name: newCategory.name_en.trim(),  // add this line
-  			name_en: newCategory.name_en.trim(),
-  			name_hi: newCategory.name_hi.trim(),
-  			description: newCategory.description || ""
-		}),
+                body: JSON.stringify(payload),
             });
 
             if (res.ok) {
@@ -241,7 +247,8 @@ function MenuManagement() {
                 fetchCategories();
             } else {
                 const errorData = await res.json();
-                toast.error(`Failed to create category: ${errorData.error || 'Unknown error'}`);
+                console.error('Category create error:', errorData);
+                toast.error(`Failed to create category: ${JSON.stringify(errorData)}`);
             }
         } catch (error) {
             console.error('Error creating category:', error);
@@ -249,7 +256,22 @@ function MenuManagement() {
         }
     };
 
-    const filteredItems = selectedCategory 
+    // Helper function to get display name based on language
+    const getDisplayName = (item, field = 'name') => {
+        if (language === 'hi') {
+            return item[`${field}_hi`] || item[`${field}_en`] || item[field] || 'N/A';
+        }
+        return item[`${field}_en`] || item[field] || 'N/A';
+    };
+
+    // Helper function to get category display name for dropdowns
+    const getCategoryDisplayName = (cat) => {
+        const enName = cat.name_en || cat.name;
+        const hiName = cat.name_hi || cat.name;
+        return `${enName} / ${hiName}`;
+    };
+
+    const filteredItems = selectedCategory
         ? menuItems.filter(item => item.category?.id === parseInt(selectedCategory))
         : menuItems;
 
@@ -260,11 +282,11 @@ function MenuManagement() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">
-                            {language === "hi" ? "🍽️ मेनू प्रबंधन" : "🍽️ Menu Management"}
+                            {language === "hi" ? "[translate:🍽️ मेनू प्रबंधन]" : "🍽️ Menu Management"}
                         </h1>
                         <p className="text-green-100">
-                            {language === "hi" 
-                                ? "रेस्टोरेंट मेनू आइटम और श्रेणियों का प्रबंधन करें"
+                            {language === "hi"
+                                ? "[translate:रेस्टोरेंट मेनू आइटम और श्रेणियों का प्रबंधन करें]"
                                 : "Manage restaurant menu items and categories"
                             }
                         </p>
@@ -272,7 +294,7 @@ function MenuManagement() {
                     <div className="text-right">
                         <div className="text-2xl font-bold">{menuItems.length}</div>
                         <div className="text-sm text-green-200">
-                            {language === "hi" ? "कुल आइटम" : "Total Items"}
+                            {language === "hi" ? "[translate:कुल आइटम]" : "Total Items"}
                         </div>
                     </div>
                 </div>
@@ -284,19 +306,20 @@ function MenuManagement() {
                     onClick={() => setShowAddCategory(true)}
                     className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors font-medium"
                 >
-                    {language === "hi" ? "➕ नई श्रेणी जोड़ें" : "➕ Add New Category"}
+                    {language === "hi" ? "[translate:➕ नई श्रेणी जोड़ें]" : "➕ Add New Category"}
                 </button>
                 <button
                     onClick={() => setShowAddItem(true)}
                     className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors font-medium"
                 >
-                    {language === "hi" ? "➕ नया आइटम जोड़ें" : "➕ Add New Item"}
+                    {language === "hi" ? "[translate:➕ नया आइटम जोड़ें]" : "➕ Add New Item"}
                 </button>
                 <button
                     onClick={loadData}
                     className="bg-gray-500 text-white px-6 py-3 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                    disabled={loading}
                 >
-                    {loading ? "🔄" : "🔄"} {language === "hi" ? "रीलोड करें" : "Reload"}
+                    {loading ? "🔄" : "🔄"} {language === "hi" ? "[translate:रीलोड करें]" : "Reload"}
                 </button>
             </div>
 
@@ -304,22 +327,22 @@ function MenuManagement() {
             <div className="bg-white p-6 rounded-xl shadow-md">
                 <div className="flex items-center space-x-4">
                     <label className="font-medium text-gray-700">
-                        {language === "hi" ? "श्रेणी के अनुसार फ़िल्टर करें:" : "Filter by Category:"}
+                        {language === "hi" ? "[translate:श्रेणी के अनुसार फ़िल्टर करें:]" : "Filter by Category:"}
                     </label>
                     <select
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
                         className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                        <option value="">{language === "hi" ? "सभी श्रेणियाँ" : "All Categories"}</option>
+                        <option value="">{language === "hi" ? "[translate:सभी श्रेणियाँ]" : "All Categories"}</option>
                         {categories.map(cat => (
                             <option key={cat.id} value={cat.id}>
-                                {language === "hi" ? (cat.name_hi || cat.name_en || cat.name) : (cat.name_en || cat.name)}
+                                {getCategoryDisplayName(cat)}
                             </option>
                         ))}
                     </select>
                     <div className="text-sm text-gray-500">
-                        {filteredItems.length} {language === "hi" ? "आइटम" : "items"}
+                        {filteredItems.length} {language === "hi" ? "[translate:आइटम]" : "items"}
                     </div>
                 </div>
             </div>
@@ -331,19 +354,19 @@ function MenuManagement() {
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "आइटम" : "Item"}
+                                    {language === "hi" ? "[translate:आइटम]" : "Item"}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "श्रेणी" : "Category"}
+                                    {language === "hi" ? "[translate:श्रेणी]" : "Category"}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "कीमत" : "Price"}
+                                    {language === "hi" ? "[translate:कीमत]" : "Price"}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "स्थिति" : "Status"}
+                                    {language === "hi" ? "[translate:स्थिति]" : "Status"}
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "कार्य" : "Actions"}
+                                    {language === "hi" ? "[translate:कार्य]" : "Actions"}
                                 </th>
                             </tr>
                         </thead>
@@ -353,16 +376,22 @@ function MenuManagement() {
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div>
                                             <div className="text-sm font-medium text-gray-900">
-                                                {language === "hi" ? (item.name_hi || item.name_en || item.name) : (item.name_en || item.name)}
+                                                {getDisplayName(item, 'name')}
                                             </div>
                                             <div className="text-sm text-gray-500">
-                                                {language === "hi" ? (item.description_hi || item.description_en || item.description) : (item.description_en || item.description)}
+                                                {getDisplayName(item, 'description')}
                                             </div>
+                                            {/* Show both names if different */}
+                                            {item.name_en !== item.name_hi && (
+                                                <div className="text-xs text-gray-400">
+                                                    {language === "hi" ? item.name_en : item.name_hi}
+                                                </div>
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            {item.category ? (language === "hi" ? (item.category.name_hi || item.category.name_en || item.category.name) : (item.category.name_en || item.category.name)) : 'Uncategorized'}
+                                            {item.category ? getDisplayName(item.category, 'name') : 'Uncategorized'}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -372,9 +401,9 @@ function MenuManagement() {
                                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                             item.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                                         }`}>
-                                            {item.available ? 
-                                                (language === "hi" ? "उपलब्ध" : "Available") : 
-                                                (language === "hi" ? "अनुपलब्ध" : "Unavailable")
+                                            {item.available ?
+                                                (language === "hi" ? "[translate:उपलब्ध]" : "Available") :
+                                                (language === "hi" ? "[translate:अनुपलब्ध]" : "Unavailable")
                                             }
                                         </span>
                                     </td>
@@ -384,13 +413,13 @@ function MenuManagement() {
                                                 onClick={() => setEditingItem(item)}
                                                 className="text-indigo-600 hover:text-indigo-900"
                                             >
-                                                {language === "hi" ? "संपादित करें" : "Edit"}
+                                                {language === "hi" ? "[translate:संपादित करें]" : "Edit"}
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteItem(item.id)}
                                                 className="text-red-600 hover:text-red-900"
                                             >
-                                                {language === "hi" ? "हटाएं" : "Delete"}
+                                                {language === "hi" ? "[translate:हटाएं]" : "Delete"}
                                             </button>
                                         </div>
                                     </td>
@@ -407,13 +436,13 @@ function MenuManagement() {
                     <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-screen overflow-y-auto">
                         <div className="p-6">
                             <h3 className="text-xl font-bold mb-4">
-                                {language === "hi" ? "नई श्रेणी जोड़ें" : "Add New Category"}
+                                {language === "hi" ? "[translate:नई श्रेणी जोड़ें]" : "Add New Category"}
                             </h3>
-                            
+
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "नाम (अंग्रेजी)" : "Name (English)"}
+                                        {language === "hi" ? "[translate:नाम (अंग्रेजी) *]" : "Name (English) *"}
                                     </label>
                                     <input
                                         type="text"
@@ -424,46 +453,46 @@ function MenuManagement() {
                                         required
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "नाम (हिंदी)" : "Name (Hindi)"}
+                                        {language === "hi" ? "[translate:नाम (हिंदी)]" : "Name (Hindi)"}
                                     </label>
                                     <input
                                         type="text"
                                         value={newCategory.name_hi}
                                         onChange={(e) => setNewCategory(prev => ({ ...prev, name_hi: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="श्रेणी का नाम हिंदी में"
+                                        placeholder="[translate:श्रेणी का नाम हिंदी में]"
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "विवरण" : "Description"}
+                                        {language === "hi" ? "[translate:विवरण]" : "Description"}
                                     </label>
                                     <textarea
                                         value={newCategory.description}
                                         onChange={(e) => setNewCategory(prev => ({ ...prev, description: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                                         rows="3"
-                                        placeholder={language === "hi" ? "श्रेणी का विवरण..." : "Category description..."}
+                                        placeholder={language === "hi" ? "[translate:श्रेणी का विवरण...]" : "Category description..."}
                                     />
                                 </div>
                             </div>
-                            
+
                             <div className="mt-6 flex space-x-3">
                                 <button
                                     onClick={() => setShowAddCategory(false)}
                                     className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
                                 >
-                                    {language === "hi" ? "रद्द करें" : "Cancel"}
+                                    {language === "hi" ? "[translate:रद्द करें]" : "Cancel"}
                                 </button>
                                 <button
                                     onClick={handleCreateCategory}
                                     className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600"
                                 >
-                                    {language === "hi" ? "श्रेणी जोड़ें" : "Add Category"}
+                                    {language === "hi" ? "[translate:श्रेणी जोड़ें]" : "Add Category"}
                                 </button>
                             </div>
                         </div>
@@ -477,62 +506,66 @@ function MenuManagement() {
                     <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-screen overflow-y-auto">
                         <div className="p-6">
                             <h3 className="text-xl font-bold mb-4">
-                                {language === "hi" ? "नया आइटम जोड़ें" : "Add New Menu Item"}
+                                {language === "hi" ? "[translate:नया आइटम जोड़ें]" : "Add New Menu Item"}
                             </h3>
-                            
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "नाम (अंग्रेजी) *" : "Name (English) *"}
+                                        {language === "hi" ? "[translate:नाम (अंग्रेजी) *]" : "Name (English) *"}
                                     </label>
                                     <input
                                         type="text"
                                         value={newItem.name_en}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, name_en: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        placeholder="Item name in English"
                                         required
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "नाम (हिंदी)" : "Name (Hindi)"}
+                                        {language === "hi" ? "[translate:नाम (हिंदी)]" : "Name (Hindi)"}
                                     </label>
                                     <input
                                         type="text"
                                         value={newItem.name_hi}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, name_hi: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        placeholder="[translate:आइटम का नाम हिंदी में]"
                                     />
                                 </div>
-                                
+
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "विवरण (अंग्रेजी)" : "Description (English)"}
+                                        {language === "hi" ? "[translate:विवरण (अंग्रेजी)]" : "Description (English)"}
                                     </label>
                                     <textarea
                                         value={newItem.description_en}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, description_en: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                                         rows="2"
+                                        placeholder="Item description in English"
                                     />
                                 </div>
-                                
+
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "विवरण (हिंदी)" : "Description (Hindi)"}
+                                        {language === "hi" ? "[translate:विवरण (हिंदी)]" : "Description (Hindi)"}
                                     </label>
                                     <textarea
                                         value={newItem.description_hi}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, description_hi: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                                         rows="2"
+                                        placeholder="[translate:आइटम का विवरण हिंदी में]"
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "कीमत (₹) *" : "Price (₹) *"}
+                                        {language === "hi" ? "[translate:कीमत (₹) *]" : "Price (₹) *"}
                                     </label>
                                     <input
                                         type="number"
@@ -540,54 +573,57 @@ function MenuManagement() {
                                         value={newItem.price}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        placeholder="0.00"
                                         required
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "श्रेणी" : "Category"}
+                                        {language === "hi" ? "[translate:श्रेणी *]" : "Category *"}
                                     </label>
                                     <select
                                         value={newItem.category_id}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, category_id: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        required
                                     >
-                                        <option value="">{language === "hi" ? "श्रेणी चुनें" : "Select Category"}</option>
+                                        <option value="">{language === "hi" ? "[translate:श्रेणी चुनें]" : "Select Category"}</option>
                                         {categories.map(cat => (
                                             <option key={cat.id} value={cat.id}>
-                                                {language === "hi" ? (cat.name_hi || cat.name_en || cat.name) : (cat.name_en || cat.name)}
+                                                {getCategoryDisplayName(cat)}
                                             </option>
                                         ))}
                                     </select>
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "तैयारी का समय (मिनट)" : "Preparation Time (minutes)"}
+                                        {language === "hi" ? "[translate:तैयारी का समय (मिनट)]" : "Preparation Time (minutes)"}
                                     </label>
                                     <input
                                         type="number"
                                         value={newItem.preparation_time}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, preparation_time: parseInt(e.target.value) || 15 }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        placeholder="15"
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "एलर्जी" : "Allergens"}
+                                        {language === "hi" ? "[translate:एलर्जी]" : "Allergens"}
                                     </label>
                                     <input
                                         type="text"
                                         value={newItem.allergens}
                                         onChange={(e) => setNewItem(prev => ({ ...prev, allergens: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder={language === "hi" ? "कॉमा से अलग करें" : "Comma separated"}
+                                        placeholder={language === "hi" ? "[translate:कॉमा से अलग करें]" : "Comma separated"}
                                     />
                                 </div>
-                                
-                                <div className="flex items-center space-x-4">
+
+                                <div className="md:col-span-2 flex flex-wrap items-center space-x-4">
                                     <label className="flex items-center">
                                         <input
                                             type="checkbox"
@@ -595,9 +631,9 @@ function MenuManagement() {
                                             onChange={(e) => setNewItem(prev => ({ ...prev, is_veg: e.target.checked }))}
                                             className="mr-2"
                                         />
-                                        {language === "hi" ? "शाकाहारी" : "Vegetarian"}
+                                        {language === "hi" ? "[translate:शाकाहारी]" : "Vegetarian"}
                                     </label>
-                                    
+
                                     <label className="flex items-center">
                                         <input
                                             type="checkbox"
@@ -605,9 +641,9 @@ function MenuManagement() {
                                             onChange={(e) => setNewItem(prev => ({ ...prev, is_spicy: e.target.checked }))}
                                             className="mr-2"
                                         />
-                                        {language === "hi" ? "तीखा" : "Spicy"}
+                                        {language === "hi" ? "[translate:तीखा]" : "Spicy"}
                                     </label>
-                                    
+
                                     <label className="flex items-center">
                                         <input
                                             type="checkbox"
@@ -615,23 +651,23 @@ function MenuManagement() {
                                             onChange={(e) => setNewItem(prev => ({ ...prev, available: e.target.checked }))}
                                             className="mr-2"
                                         />
-                                        {language === "hi" ? "उपलब्ध" : "Available"}
+                                        {language === "hi" ? "[translate:उपलब्ध]" : "Available"}
                                     </label>
                                 </div>
                             </div>
-                            
+
                             <div className="mt-6 flex space-x-3">
                                 <button
                                     onClick={() => setShowAddItem(false)}
                                     className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
                                 >
-                                    {language === "hi" ? "रद्द करें" : "Cancel"}
+                                    {language === "hi" ? "[translate:रद्द करें]" : "Cancel"}
                                 </button>
                                 <button
                                     onClick={handleCreateItem}
                                     className="flex-1 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600"
                                 >
-                                    {language === "hi" ? "आइटम जोड़ें" : "Add Item"}
+                                    {language === "hi" ? "[translate:आइटम जोड़ें]" : "Add Item"}
                                 </button>
                             </div>
                         </div>
@@ -645,26 +681,26 @@ function MenuManagement() {
                     <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-screen overflow-y-auto">
                         <div className="p-6">
                             <h3 className="text-xl font-bold mb-4">
-                                {language === "hi" ? "आइटम संपादित करें" : "Edit Menu Item"}
+                                {language === "hi" ? "[translate:आइटम संपादित करें]" : "Edit Menu Item"}
                             </h3>
-                            
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "नाम (अंग्रेजी) *" : "Name (English) *"}
+                                        {language === "hi" ? "[translate:नाम (अंग्रेजी) *]" : "Name (English) *"}
                                     </label>
                                     <input
                                         type="text"
-                                        value={editingItem.name_en}
+                                        value={editingItem.name_en || editingItem.name}
                                         onChange={(e) => setEditingItem(prev => ({ ...prev, name_en: e.target.value }))}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                                         required
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "नाम (हिंदी)" : "Name (Hindi)"}
+                                        {language === "hi" ? "[translate:नाम (हिंदी)]" : "Name (Hindi)"}
                                     </label>
                                     <input
                                         type="text"
@@ -673,10 +709,34 @@ function MenuManagement() {
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
-                                
+
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        {language === "hi" ? "[translate:विवरण (अंग्रेजी)]" : "Description (English)"}
+                                    </label>
+                                    <textarea
+                                        value={editingItem.description_en || editingItem.description || ''}
+                                        onChange={(e) => setEditingItem(prev => ({ ...prev, description_en: e.target.value }))}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        rows="2"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        {language === "hi" ? "[translate:विवरण (हिंदी)]" : "Description (Hindi)"}
+                                    </label>
+                                    <textarea
+                                        value={editingItem.description_hi || ''}
+                                        onChange={(e) => setEditingItem(prev => ({ ...prev, description_hi: e.target.value }))}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                        rows="2"
+                                    />
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "कीमत (₹) *" : "Price (₹) *"}
+                                        {language === "hi" ? "[translate:कीमत (₹) *]" : "Price (₹) *"}
                                     </label>
                                     <input
                                         type="number"
@@ -687,13 +747,13 @@ function MenuManagement() {
                                         required
                                     />
                                 </div>
-                                
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "श्रेणी" : "Category"}
+                                        {language === "hi" ? "[translate:श्रेणी]" : "Category"}
                                     </label>
                                     <select
-                                        value={editingItem.category?.id || ''}
+                                        value={editingItem.category?.id || editingItem.category_id || ''}
                                         onChange={(e) => {
                                             const categoryId = e.target.value;
                                             const category = categories.find(cat => cat.id === parseInt(categoryId));
@@ -701,15 +761,15 @@ function MenuManagement() {
                                         }}
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="">{language === "hi" ? "श्रेणी चुनें" : "Select Category"}</option>
+                                        <option value="">{language === "hi" ? "[translate:श्रेणी चुनें]" : "Select Category"}</option>
                                         {categories.map(cat => (
                                             <option key={cat.id} value={cat.id}>
-                                                {language === "hi" ? (cat.name_hi || cat.name_en || cat.name) : (cat.name_en || cat.name)}
+                                                {getCategoryDisplayName(cat)}
                                             </option>
                                         ))}
                                     </select>
                                 </div>
-                                
+
                                 <div className="md:col-span-2 flex items-center space-x-4">
                                     <label className="flex items-center">
                                         <input
@@ -718,23 +778,43 @@ function MenuManagement() {
                                             onChange={(e) => setEditingItem(prev => ({ ...prev, available: e.target.checked }))}
                                             className="mr-2"
                                         />
-                                        {language === "hi" ? "उपलब्ध" : "Available"}
+                                        {language === "hi" ? "[translate:उपलब्ध]" : "Available"}
+                                    </label>
+
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={editingItem.is_veg}
+                                            onChange={(e) => setEditingItem(prev => ({ ...prev, is_veg: e.target.checked }))}
+                                            className="mr-2"
+                                        />
+                                        {language === "hi" ? "[translate:शाकाहारी]" : "Vegetarian"}
+                                    </label>
+
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={editingItem.is_spicy}
+                                            onChange={(e) => setEditingItem(prev => ({ ...prev, is_spicy: e.target.checked }))}
+                                            className="mr-2"
+                                        />
+                                        {language === "hi" ? "[translate:तीखा]" : "Spicy"}
                                     </label>
                                 </div>
                             </div>
-                            
+
                             <div className="mt-6 flex space-x-3">
                                 <button
                                     onClick={() => setEditingItem(null)}
                                     className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
                                 >
-                                    {language === "hi" ? "रद्द करें" : "Cancel"}
+                                    {language === "hi" ? "[translate:रद्द करें]" : "Cancel"}
                                 </button>
                                 <button
                                     onClick={handleUpdateItem}
                                     className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600"
                                 >
-                                    {language === "hi" ? "अपडेट करें" : "Update Item"}
+                                    {language === "hi" ? "[translate:अपडेट करें]" : "Update Item"}
                                 </button>
                             </div>
                         </div>
@@ -746,3 +826,4 @@ function MenuManagement() {
 }
 
 export default MenuManagement;
+
