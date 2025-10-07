@@ -102,10 +102,22 @@ function MenuManagement() {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${user.access}`,
                 },
-                body: JSON.stringify({
-                    ...newItem,
-                    price: parseFloat(newItem.price),
-                }),
+                  body: JSON.stringify({
+    			name: newItem.name_en,
+			category: newItem.category_id,
+    			name_en: newItem.name_en,
+    			name_hi: newItem.name_hi,
+    			description_en: newItem.description_en,
+    			description_hi: newItem.description_hi,
+    			price: parseFloat(newItem.price),
+    			//category: parseInt(newItem.category_id, 10),
+    			preparation_time: newItem.preparation_time,
+    			is_veg: newItem.is_veg,
+    			is_spicy: newItem.is_spicy,
+    			allergens: newItem.allergens,
+    			available: newItem.available,
+		  }),
+
             });
 
             if (res.ok) {
@@ -145,10 +157,21 @@ function MenuManagement() {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${user.access}`,
                 },
-                body: JSON.stringify({
-                    ...editingItem,
-                    price: parseFloat(editingItem.price),
-                }),
+                 body: JSON.stringify({
+			name: editingItem.name_en,      
+			category: editingItem.category_id,  
+        		name_en: editingItem.name_en,
+        		name_hi: editingItem.name_hi,
+        		description_en: editingItem.description_en,
+        		description_hi: editingItem.description_hi,
+        		price: parseFloat(editingItem.price),
+        		//category: parseInt(editingItem.category_id || (editingItem.category?.id), 10),
+        		preparation_time: editingItem.preparation_time,
+        		is_veg: editingItem.is_veg,
+        		is_spicy: editingItem.is_spicy,
+        		allergens: editingItem.allergens,
+        		available: editingItem.available,
+      		}),
             });
 
             if (res.ok) {
