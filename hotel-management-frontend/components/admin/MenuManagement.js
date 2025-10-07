@@ -55,7 +55,7 @@ function MenuManagement() {
 
     const fetchCategories = async () => {
         try {
-            const res = await fetch("/api/restaurant/menu/categories/", {
+            const res = await fetch("/api/restaurant/menu-categories/", {
                 headers: { Authorization: `Bearer ${user.access}` },
             });
             
@@ -73,7 +73,7 @@ function MenuManagement() {
 
     const fetchMenuItems = async () => {
         try {
-            const res = await fetch("/api/restaurant/menu/items/", {
+            const res = await fetch("/api/restaurant/menu-items/", {
                 headers: { Authorization: `Bearer ${user.access}` },
             });
             
@@ -96,7 +96,7 @@ function MenuManagement() {
         }
 
         try {
-            const res = await fetch("/api/restaurant/menu/items/", {
+            const res = await fetch("/api/restaurant/menu-items/", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -139,7 +139,7 @@ function MenuManagement() {
         if (!editingItem) return;
 
         try {
-            const res = await fetch(`/api/restaurant/menu/items/${editingItem.id}/`, {
+            const res = await fetch(`/api/restaurant/menu-items/${editingItem.id}/`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
@@ -169,7 +169,7 @@ function MenuManagement() {
         if (!confirm("Are you sure you want to delete this item?")) return;
 
         try {
-            const res = await fetch(`/api/restaurant/menu/items/${itemId}/`, {
+            const res = await fetch(`/api/restaurant/menu-items/${itemId}/`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${user.access}` },
             });
@@ -193,13 +193,18 @@ function MenuManagement() {
         }
 
         try {
-            const res = await fetch("/api/restaurant/menu/categories/", {
+            const res = await fetch("/api/restaurant/menu-categories/", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${user.access}`,
                 },
-                body: JSON.stringify(newCategory),
+                body: JSON.stringify({
+  			name: newCategory.name_en.trim(),  // add this line
+  			name_en: newCategory.name_en.trim(),
+  			name_hi: newCategory.name_hi.trim(),
+  			description: newCategory.description || ""
+		}),
             });
 
             if (res.ok) {

@@ -14,7 +14,7 @@ function ManageCategories() {
   // Always set categories as an array (supports paginated and non-paginated responses)
   const fetchCategories = async () => {
     try {
-      const res = await fetch("/api/menu/categories/", {
+      const res = await fetch("/api/restaurant/menu-categories/", {
         headers: {
           Authorization: `Bearer ${user?.access}`,
         },
@@ -33,13 +33,17 @@ function ManageCategories() {
     }
 
     try {
-      const res = await fetch("/api/menu/categories/", {
+      const res = await fetch("/api/restaurant/menu-categories/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${user?.access}`,
         },
-        body: JSON.stringify({ name_en: nameEn.trim(), name_hi: nameHi.trim() }),
+         body: JSON.stringify({
+         	name:    nameEn.trim(),
+         	name_en: nameEn.trim(),
+         	name_hi: nameHi.trim()
+       }),
       });
       if (res.ok) {
         toast.success("✅ Category created");
@@ -56,7 +60,7 @@ function ManageCategories() {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`/api/menu/categories/${id}/`, {
+      const res = await fetch(`/api/restaurant/menu-categories/${id}/`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${user?.access}`,

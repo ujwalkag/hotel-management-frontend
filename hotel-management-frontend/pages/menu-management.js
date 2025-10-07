@@ -15,12 +15,13 @@ export default function MenuManagement() {
 
   const fetchData = async () => {
     try {
-      const itemsRes = await fetch("/api/menu/items/", {
-        headers: { Authorization: `Bearer ${user?.access}` },
-      });
-      const catsRes = await fetch("/api/menu/categories/", {
-        headers: { Authorization: `Bearer ${user?.access}` },
-      });
+      const itemsRes = await fetch("/api/restaurant/menu/items/", {
+      headers: { Authorization: `Bearer ${user?.access}` },
+    });
+    const catsRes = await fetch("/api/restaurant/menu/categories/", {
+      headers: { Authorization: `Bearer ${user?.access}` },
+    });
+
       setMenuItems(await itemsRes.json());
       setCategories(await catsRes.json());
     } catch {
