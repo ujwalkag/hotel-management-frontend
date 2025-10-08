@@ -127,14 +127,14 @@ function RestaurantBillingForm() {
         if (res.ok) {
             const data = await res.json();
             const categories = Array.isArray(data) ? data : data.results || [];
-            
+
             // ✅ ADD: Ensure backward compatibility
             const compatibleCategories = categories.map(cat => ({
                 ...cat,
                 name_en: cat.name_en || cat.name,
                 name_hi: cat.name_hi || cat.name
             }));
-            
+
             setCategories(compatibleCategories);
         } else {
             throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -565,7 +565,7 @@ function RestaurantBillingForm() {
     };
 
     // Generate final D-mart style bill - ENHANCED ERROR HANDLING
-    const handleGenerateBill = async () => {
+const handleGenerateBill = async () => {
     if (selectedItems.length === 0) {
         toast.error("Please select at least one item");
         return;
@@ -575,119 +575,142 @@ function RestaurantBillingForm() {
 
     // Use customer name or default to Guest (making it optional)
     const finalCustomerName = customerInfo.name.trim() || 'Guest';
-    const finalCustomerPhone = customerInfo.phone.trim() || '';
-
-    // Prepare payload for restaurant billing endpoint
-    const payload = {
-        customer_name: finalCustomerName,
-        customer_phone: finalCustomerPhone,
-        customer_email: customerInfo.email || '',
-        payment_method: billingSettings.paymentMethod,
-
-        // Items with proper structure for restaurant API
-        items: selectedItems.map(item => ({
-            item_id: item.isCustom ? null : item.id,
-            item_name: item.isCustom ? item.name : null,
-            quantity: item.quantity,
-            price: item.selectedPrice,
-            discount: item.itemDiscount || 0,
-            notes: item.notes || ''
-        })),
-
-        // GST and pricing settings
-        apply_gst: billingSettings.includeGST,
-        gst_rate: billingSettings.gstRate,
-        interstate: billingSettings.interstate,
-        discount_percent: billingSettings.discountPercent,
-        discount_amount: billingSettings.discountAmount,
-
-        // Additional details
-        table_number: billingSettings.tableNumber,
-        special_instructions: billingSettings.specialInstructions,
-
-        // Calculated totals for verification
-        subtotal: billCalculation.subtotal,
-        total_amount: billCalculation.total
-    };
+    const finalCustomerPhone = customerInfo.phone.trim();
 
     try {
-        console.log('🚀 Sending restaurant bill payload:', payload);
+        // Check if we have a table number for table-based billing
+        if (billingSettings.tableNumber) {
+            // Use table-based billing endpoint
+            const tableId = availableTables.find(t => t.table_number === billingSettings.tableNumber)?.id;
+            
+            if (!tableId) {
+                toast.error("Invalid table selected");
+                return;
+            }
 
-        // ✅ UPDATED: Use restaurant billing endpoint exclusively
-        const res = await fetch("/api/bills/create/restaurant/", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${user.access}`,
-            },
-            body: JSON.stringify(payload),
-        });
+            const tablePayload = {
+                customer_name: finalCustomerName,
+                customer_phone: finalCustomerPhone,
+                payment_method: billingSettings.paymentMethod,
+                discount_amount: billingSettings.discountAmount,
+                discount_percentage: billingSettings.discountPercent,
+                service_charge: 0,
+                notes: billingSettings.specialInstructions,
+                apply_gst: billingSettings.includeGST
+            };
 
-        // 🔧 ENHANCED: Better error handling for different response types
-        let data;
-        const contentType = res.headers.get("content-type");
-        
-        if (contentType && contentType.includes("application/json")) {
-            data = await res.json();
-        } else {
-            // Handle HTML error responses (500 errors)
-            const htmlText = await res.text();
-            console.error("Received HTML instead of JSON:", htmlText);
-            throw new Error(
-                language === "hi" ? 
-                "सर्वर त्रुटि - कृपया व्यवस्थापक से संपर्क करें" : 
-                "Server error - please contact administrator"
-            );
-        }
+            const res = await fetch(`/api/restaurant/tables/${tableId}/complete_billing/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${user.access}`,
+                },
+                body: JSON.stringify(tablePayload),
+            });
 
-        if (!res.ok) {
-            console.error("Backend error:", data);
-            throw new Error(data.error || data.detail || `HTTP ${res.status}: ${res.statusText}`);
-        }
+            const data = await res.json();
 
-        // Success notification
-        toast.success(
-            `✅ Restaurant Bill Generated!\n` +
-            `Receipt: ${data.receipt_number || 'GENERATED'}\n` +
-            `Customer: ${finalCustomerName}\n` +
-            `Total: ₹${data.total_amount || billCalculation.total.toFixed(2)}\n` +
-            `🧾 Professional receipt created!`,
-            { 
+            if (!res.ok) {
+                throw new Error(data.error || data.detail || 'Failed to generate bill');
+            }
+
+            // Success notification with details
+            toast.success(`✅ Bill Generated Successfully!
+Receipt: ${data.receipt_number}
+Customer: ${finalCustomerName}
+Total: ₹${data.final_amount.toFixed(2)}
+Table: ${billingSettings.tableNumber}`, {
                 duration: 6000,
                 style: {
                     background: '#10B981',
                     color: 'white',
-                    fontWeight: 'bold'
-                }
+                    fontWeight: 'bold',
+                },
+            });
+
+        } else {
+            // Use enhanced billing for non-table based billing
+            const enhancedPayload = {
+                customer_name: finalCustomerName,
+                customer_phone: finalCustomerPhone,
+                payment_method: billingSettings.paymentMethod,
+                apply_gst: billingSettings.includeGST,
+                gst_rate: billingSettings.gstRate,
+                interstate: billingSettings.interstate,
+                discount_percent: billingSettings.discountPercent,
+                discount_amount: billingSettings.discountAmount,
+                items: selectedItems.map(item => ({
+                    item_id: item.isCustom ? null : item.id,
+                    item_name: item.isCustom ? item.name : null,
+                    quantity: item.quantity,
+                    price: item.selectedPrice,
+                    discount: item.itemDiscount || 0,
+                    notes: item.notes || "",
+                })),
+                special_instructions: billingSettings.specialInstructions,
+                subtotal: billCalculation.subtotal,
+                total_amount: billCalculation.total
+            };
+
+            const res = await fetch(`/api/restaurant/enhanced-billing/generate_final_bill/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${user.access}`,
+                },
+                body: JSON.stringify(enhancedPayload),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || data.detail || 'Failed to generate bill');
             }
-        );
+
+            // Success notification
+            toast.success(`✅ D-mart Style Bill Generated!
+Receipt: ${data.bill.receipt_number}
+Customer: ${finalCustomerName}
+Total: ₹${data.bill.total_amount.toFixed(2)}
+Professional receipt created!`, {
+                duration: 6000,
+                style: {
+                    background: '#10B981',
+                    color: 'white',
+                    fontWeight: 'bold',
+                },
+            });
+        }
 
         // Reset form
         setSelectedItems([]);
-        setCustomerInfo({ name: "Guest", phone: "", email: "", address: "" });
-        setBillingSettings(prev => ({ 
-            ...prev, 
-            discountPercent: 0, 
-            discountAmount: 0, 
-            specialInstructions: '' 
+        setCustomerInfo({
+            name: 'Guest',
+            phone: '',
+            email: '',
+            address: ''
+        });
+        setBillingSettings(prev => ({
+            ...prev,
+            discountPercent: 0,
+            discountAmount: 0,
+            specialInstructions: ''
         }));
         setBillPreview(null);
-
-        // Navigate to bill details if available
         if (data.bill_id) {
-           router.push(`/bills/${result.bill_id}`);
-        }
+                router.push(`/admin/bills/${data.bill_id}`);
+            }
+        // Navigate to success page if needed
+        // router.push('/admin/billing/success');
 
     } catch (error) {
         console.error('Bill generation error:', error);
-        toast.error(
-            `${language === "hi" ? "बिल बनाने में त्रुटि" : "Error generating bill"}: ${error.message}`,
-            { duration: 7000 }
-        );
+        toast.error(`Error generating bill: ${error.message}`);
     } finally {
         setLoading(false);
     }
 };
+
     if (loading && selectedItems.length === 0) {
         return (
             <div className="flex items-center justify-center min-h-screen">
@@ -1297,4 +1320,5 @@ function RestaurantBillingForm() {
 }
 
 export default RestaurantBillingForm;
+
 
