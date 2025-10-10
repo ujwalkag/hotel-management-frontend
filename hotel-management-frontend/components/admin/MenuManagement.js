@@ -1,280 +1,168 @@
-import { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { useLanguage } from "@/context/LanguageContext";
-import toast from "react-hot-toast";
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { useLanguage } from '@/context/LanguageContext';
+import toast from 'react-hot-toast';
 
 function MenuManagement() {
     const { user } = useAuth();
     const { language } = useLanguage();
-
+    
+    // State management
+    const [items, setItems] = useState([]);
     const [categories, setCategories] = useState([]);
-    const [menuItems, setMenuItems] = useState([]);
-    const [selectedCategory, setSelectedCategory] = useState("");
-    const [showAddItem, setShowAddItem] = useState(false);
-    const [showAddCategory, setShowAddCategory] = useState(false);
-    const [editingItem, setEditingItem] = useState(null);
-    const [editingCategory, setEditingCategory] = useState(null);
+    const [filteredItems, setFilteredItems] = useState([]); // ✅ ADDED: Separate filtered state
     const [loading, setLoading] = useState(false);
-
-    const [newItem, setNewItem] = useState({
-        name_en: "",
-        name_hi: "",
-        description_en: "",
-        description_hi: "",
-        price: "",
-        category_id: "",
-        preparation_time: 15,
-        is_veg: true,
-        is_spicy: false,
-        allergens: "",
-        available: true
-    });
-
-    const [newCategory, setNewCategory] = useState({
-        name_en: "",
-        name_hi: "",
-        description: ""
-    });
-
+    
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('');
+    const [availabilityFilter, setAvailabilityFilter] = useState('all'); // all, available, unavailable
+    
+    // Load initial data
     useEffect(() => {
         if (user?.access) {
-            loadData();
+            loadInitialData();
         }
     }, [user]);
-
-    const loadData = async () => {
+    
+    // ✅ FIXED: Apply filters whenever items or filter criteria change
+    useEffect(() => {
+        applyFilters();
+    }, [items, searchQuery, selectedCategory, availabilityFilter]);
+    
+    const loadInitialData = async () => {
         setLoading(true);
         try {
-            await Promise.all([fetchCategories(), fetchMenuItems()]);
+            await Promise.all([fetchItems(), fetchCategories()]);
         } catch (error) {
-            console.error('Error loading menu data:', error);
+            console.error('Error loading data:', error);
         } finally {
             setLoading(false);
         }
     };
-
-    const fetchCategories = async () => {
+    
+    const fetchItems = async () => {
         try {
-            const res = await fetch("/api/restaurant/menu-categories/", {
+            const res = await fetch('/api/restaurant/menu-for-ordering/', {
                 headers: { Authorization: `Bearer ${user.access}` },
             });
-
+            
             if (res.ok) {
                 const data = await res.json();
-                setCategories(data);
+                const allItems = [];
+                
+                // ✅ FIXED: Handle nested category structure properly
+                data.forEach(categoryData => {
+                    if (categoryData.items && Array.isArray(categoryData.items)) {
+                        categoryData.items.forEach(item => {
+                            allItems.push({
+                                ...item,
+                                category_id: categoryData.category?.id || categoryData.id,
+                                category_name: categoryData.category?.name || categoryData.name,
+                                // ✅ ENSURE: Consistent field naming
+                                name_en: item.name_en || item.name,
+                                name_hi: item.name_hi || item.name,
+                                available: item.available !== false && item.is_active !== false
+                            });
+                        });
+                    }
+                });
+                
+                setItems(allItems);
             } else {
-                throw new Error('Failed to load categories');
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+        } catch (error) {
+            console.error('Error fetching items:', error);
+            toast.error(language === 'hi' ? 'आइटम लोड करने में विफल' : 'Failed to load items');
+        }
+    };
+    
+    const fetchCategories = async () => {
+        try {
+            const res = await fetch('/api/restaurant/menu-categories/', {
+                headers: { Authorization: `Bearer ${user.access}` },
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                const categories = Array.isArray(data) ? data : data.results || [];
+                setCategories(categories);
+            } else {
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
         } catch (error) {
             console.error('Error fetching categories:', error);
-            toast.error("Failed to load categories");
+            toast.error(language === 'hi' ? 'श्रेणियाँ लोड करने में विफल' : 'Failed to load categories');
         }
     };
-
-    const fetchMenuItems = async () => {
-        try {
-            const res = await fetch("/api/restaurant/menu-items/", {
-                headers: { Authorization: `Bearer ${user.access}` },
+    
+    // ✅ FIXED: Comprehensive filtering logic
+    const applyFilters = () => {
+        let filtered = [...items];
+        
+        // Apply search filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase().trim();
+            filtered = filtered.filter(item => {
+                const searchableFields = [
+                    item.name,
+                    item.name_en,
+                    item.name_hi,
+                    item.description,
+                    item.category_name
+                ].filter(Boolean); // Remove null/undefined
+                
+                return searchableFields.some(field => 
+                    field.toLowerCase().includes(query)
+                );
             });
-
-            if (res.ok) {
-                const data = await res.json();
-                setMenuItems(data);
-            } else {
-                throw new Error('Failed to load menu items');
-            }
-        } catch (error) {
-            console.error('Error fetching menu items:', error);
-            toast.error("Failed to load menu items");
         }
-    };
-
-    const handleCreateItem = async () => {
-        if (!newItem.name_en || !newItem.price || !newItem.category_id) {
-            toast.error("Please fill required fields (English name, price, and category)");
-            return;
-        }
-
-        try {
-            const payload = {
-                name_en: newItem.name_en.trim(),
-                name_hi: newItem.name_hi.trim() || newItem.name_en.trim(),
-                description_en: newItem.description_en.trim(),
-                description_hi: newItem.description_hi.trim() || newItem.description_en.trim(),
-                price: parseFloat(newItem.price),
-                category_id: parseInt(newItem.category_id, 10),
-                preparation_time: newItem.preparation_time,
-                is_veg: newItem.is_veg,
-                is_spicy: newItem.is_spicy,
-                allergens: newItem.allergens,
-                available: newItem.available,
-            };
-
-            const res = await fetch("/api/restaurant/menu-items/", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${user.access}`,
-                },
-                body: JSON.stringify(payload),
+        
+        // Apply category filter
+        if (selectedCategory && selectedCategory !== '') {
+            filtered = filtered.filter(item => {
+                // ✅ FIXED: Handle both ID and name matching
+                const categoryId = parseInt(selectedCategory);
+                return item.category_id === categoryId || 
+                       item.category_name === selectedCategory ||
+                       item.category_id === selectedCategory;
             });
-
-            if (res.ok) {
-                toast.success("Menu item created successfully!");
-                setNewItem({
-                    name_en: "",
-                    name_hi: "",
-                    description_en: "",
-                    description_hi: "",
-                    price: "",
-                    category_id: "",
-                    preparation_time: 15,
-                    is_veg: true,
-                    is_spicy: false,
-                    allergens: "",
-                    available: true
-                });
-                setShowAddItem(false);
-                fetchMenuItems();
-            } else {
-                const errorData = await res.json();
-                console.error('Create error:', errorData);
-                toast.error(`Failed to create item: ${JSON.stringify(errorData)}`);
-            }
-        } catch (error) {
-            console.error('Error creating item:', error);
-            toast.error("Error creating menu item");
         }
-    };
-
-    const handleUpdateItem = async () => {
-        if (!editingItem || !editingItem.name_en || !editingItem.price) {
-            toast.error("Please fill required fields");
-            return;
-        }
-
-        try {
-            const payload = {
-                name_en: editingItem.name_en.trim(),
-                name_hi: editingItem.name_hi?.trim() || editingItem.name_en.trim(),
-                description_en: editingItem.description_en?.trim() || "",
-                description_hi: editingItem.description_hi?.trim() || editingItem.description_en?.trim() || "",
-                price: parseFloat(editingItem.price),
-                category_id: parseInt(editingItem.category_id || editingItem.category?.id, 10),
-                preparation_time: editingItem.preparation_time || 15,
-                is_veg: editingItem.is_veg,
-                is_spicy: editingItem.is_spicy,
-                allergens: editingItem.allergens || "",
-                available: editingItem.available,
-            };
-
-            const res = await fetch(`/api/restaurant/menu-items/${editingItem.id}/`, {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${user.access}`,
-                },
-                body: JSON.stringify(payload),
+        
+        // Apply availability filter
+        if (availabilityFilter !== 'all') {
+            filtered = filtered.filter(item => {
+                if (availabilityFilter === 'available') {
+                    return item.available === true;
+                } else if (availabilityFilter === 'unavailable') {
+                    return item.available === false;
+                }
+                return true;
             });
-
-            if (res.ok) {
-                toast.success("Menu item updated successfully!");
-                setEditingItem(null);
-                fetchMenuItems();
-            } else {
-                const errorData = await res.json();
-                console.error('Update error:', errorData);
-                toast.error(`Failed to update item: ${JSON.stringify(errorData)}`);
-            }
-        } catch (error) {
-            console.error('Error updating item:', error);
-            toast.error("Error updating menu item");
         }
+        
+        setFilteredItems(filtered);
     };
-
-    const handleDeleteItem = async (itemId) => {
-        if (!confirm("Are you sure you want to delete this item?")) return;
-
-        try {
-            const res = await fetch(`/api/restaurant/menu-items/${itemId}/`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${user.access}` },
-            });
-
-            if (res.ok) {
-                toast.success("Menu item deleted successfully!");
-                fetchMenuItems();
-            } else {
-                toast.error("Failed to delete menu item");
-            }
-        } catch (error) {
-            console.error('Error deleting item:', error);
-            toast.error("Error deleting menu item");
-        }
+    
+    // ✅ FIXED: Clear all filters function
+    const clearFilters = () => {
+        setSearchQuery('');
+        setSelectedCategory('');
+        setAvailabilityFilter('all');
     };
-
-    const handleCreateCategory = async () => {
-        if (!newCategory.name_en) {
-            toast.error("Please enter English category name");
-            return;
-        }
-
-        try {
-            const payload = {
-                name: newCategory.name_en.trim(),
-                name_en: newCategory.name_en.trim(),
-                name_hi: newCategory.name_hi.trim() || newCategory.name_en.trim(),
-                description: newCategory.description || ""
-            };
-
-            const res = await fetch("/api/restaurant/menu-categories/", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${user.access}`,
-                },
-                body: JSON.stringify(payload),
-            });
-
-            if (res.ok) {
-                toast.success("Category created successfully!");
-                setNewCategory({
-                    name_en: "",
-                    name_hi: "",
-                    description: ""
-                });
-                setShowAddCategory(false);
-                fetchCategories();
-            } else {
-                const errorData = await res.json();
-                console.error('Category create error:', errorData);
-                toast.error(`Failed to create category: ${JSON.stringify(errorData)}`);
-            }
-        } catch (error) {
-            console.error('Error creating category:', error);
-            toast.error("Error creating category");
-        }
-    };
-
-    // Helper function to get display name based on language
-    const getDisplayName = (item, field = 'name') => {
-        if (language === 'hi') {
-            return item[`${field}_hi`] || item[`${field}_en`] || item[field] || 'N/A';
-        }
-        return item[`${field}_en`] || item[field] || 'N/A';
-    };
-
-    // Helper function to get category display name for dropdowns
-    const getCategoryDisplayName = (cat) => {
-        const enName = cat.name_en || cat.name;
-        const hiName = cat.name_hi || cat.name;
-        return `${enName} / ${hiName}`;
-    };
-
-    const filteredItems = selectedCategory
-        ? menuItems.filter(item => item.category?.id === parseInt(selectedCategory))
-        : menuItems;
-
+    
+    if (loading && items.length === 0) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading Menu Management...</p>
+                </div>
+            </div>
+        );
+    }
+    
     return (
         <div className="max-w-7xl mx-auto p-6 space-y-6">
             {/* Header */}
@@ -282,545 +170,178 @@ function MenuManagement() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">
-                            {language === "hi" ? "[translate:🍽️ मेनू प्रबंधन]" : "🍽️ Menu Management"}
+                            {language === 'hi' ? '🍽️ मेनू प्रबंधन' : '🍽️ Menu Management'}
                         </h1>
                         <p className="text-green-100">
-                            {language === "hi"
-                                ? "[translate:रेस्टोरेंट मेनू आइटम और श्रेणियों का प्रबंधन करें]"
-                                : "Manage restaurant menu items and categories"
+                            {language === 'hi' 
+                                ? 'रेस्टोरेंट मेनू आइटम प्रबंधित करें'
+                                : 'Manage restaurant menu items'
                             }
                         </p>
                     </div>
                     <div className="text-right">
-                        <div className="text-2xl font-bold">{menuItems.length}</div>
+                        <div className="text-2xl font-bold">{filteredItems.length}</div>
                         <div className="text-sm text-green-200">
-                            {language === "hi" ? "[translate:कुल आइटम]" : "Total Items"}
+                            {language === 'hi' ? 'कुल आइटम' : 'Total Items'}
                         </div>
                     </div>
                 </div>
             </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-4">
-                <button
-                    onClick={() => setShowAddCategory(true)}
-                    className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors font-medium"
-                >
-                    {language === "hi" ? "[translate:➕ नई श्रेणी जोड़ें]" : "➕ Add New Category"}
-                </button>
-                <button
-                    onClick={() => setShowAddItem(true)}
-                    className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors font-medium"
-                >
-                    {language === "hi" ? "[translate:➕ नया आइटम जोड़ें]" : "➕ Add New Item"}
-                </button>
-                <button
-                    onClick={loadData}
-                    className="bg-gray-500 text-white px-6 py-3 rounded-lg hover:bg-gray-600 transition-colors font-medium"
-                    disabled={loading}
-                >
-                    {loading ? "🔄" : "🔄"} {language === "hi" ? "[translate:रीलोड करें]" : "Reload"}
-                </button>
-            </div>
-
-            {/* Category Filter */}
+            
+            {/* Filters Section */}
             <div className="bg-white p-6 rounded-xl shadow-md">
-                <div className="flex items-center space-x-4">
-                    <label className="font-medium text-gray-700">
-                        {language === "hi" ? "[translate:श्रेणी के अनुसार फ़िल्टर करें:]" : "Filter by Category:"}
-                    </label>
-                    <select
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-semibold">
+                        {language === 'hi' ? '🔍 फिल्टर' : '🔍 Filters'}
+                    </h3>
+                    <button
+                        onClick={clearFilters}
+                        className="text-blue-500 hover:text-blue-700 text-sm"
                     >
-                        <option value="">{language === "hi" ? "[translate:सभी श्रेणियाँ]" : "All Categories"}</option>
-                        {categories.map(cat => (
-                            <option key={cat.id} value={cat.id}>
-                                {getCategoryDisplayName(cat)}
+                        {language === 'hi' ? 'सभी फिल्टर साफ करें' : 'Clear All Filters'}
+                    </button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* Search Filter */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {language === 'hi' ? 'खोज' : 'Search'}
+                        </label>
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder={language === 'hi' ? 'आइटम खोजें...' : 'Search items...'}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                    </div>
+                    
+                    {/* Category Filter */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {language === 'hi' ? 'श्रेणी' : 'Category'}
+                        </label>
+                        <select
+                            value={selectedCategory}
+                            onChange={(e) => setSelectedCategory(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="">
+                                {language === 'hi' ? 'सभी श्रेणियाँ' : 'All Categories'}
                             </option>
-                        ))}
-                    </select>
-                    <div className="text-sm text-gray-500">
-                        {filteredItems.length} {language === "hi" ? "[translate:आइटम]" : "items"}
+                            {categories.map(cat => (
+                                <option key={cat.id} value={cat.id}>
+                                    {language === 'hi' ? (cat.name_hi || cat.name) : (cat.name_en || cat.name)}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    
+                    {/* Availability Filter */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {language === 'hi' ? 'उपलब्धता' : 'Availability'}
+                        </label>
+                        <select
+                            value={availabilityFilter}
+                            onChange={(e) => setAvailabilityFilter(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="all">{language === 'hi' ? 'सभी' : 'All'}</option>
+                            <option value="available">{language === 'hi' ? 'उपलब्ध' : 'Available'}</option>
+                            <option value="unavailable">{language === 'hi' ? 'अनुपलब्ध' : 'Unavailable'}</option>
+                        </select>
+                    </div>
+                    
+                    {/* Results Count */}
+                    <div className="flex items-end">
+                        <div className="text-sm text-gray-600">
+                            {language === 'hi' 
+                                ? `${filteredItems.length} में से ${items.length} परिणाम दिखा रहे हैं`
+                                : `Showing ${filteredItems.length} of ${items.length} results`
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
-
-            {/* Menu Items Table */}
-            <div className="bg-white rounded-xl shadow-md overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "[translate:आइटम]" : "Item"}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "[translate:श्रेणी]" : "Category"}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "[translate:कीमत]" : "Price"}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "[translate:स्थिति]" : "Status"}
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {language === "hi" ? "[translate:कार्य]" : "Actions"}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {filteredItems.map(item => (
-                                <tr key={item.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div>
-                                            <div className="text-sm font-medium text-gray-900">
-                                                {getDisplayName(item, 'name')}
-                                            </div>
-                                            <div className="text-sm text-gray-500">
-                                                {getDisplayName(item, 'description')}
-                                            </div>
-                                            {/* Show both names if different */}
-                                            {item.name_en !== item.name_hi && (
-                                                <div className="text-xs text-gray-400">
-                                                    {language === "hi" ? item.name_en : item.name_hi}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            {item.category ? getDisplayName(item.category, 'name') : 'Uncategorized'}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        ₹{item.price}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                            item.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                        }`}>
-                                            {item.available ?
-                                                (language === "hi" ? "[translate:उपलब्ध]" : "Available") :
-                                                (language === "hi" ? "[translate:अनुपलब्ध]" : "Unavailable")
+            
+            {/* Items Grid */}
+            <div className="bg-white rounded-xl shadow-md p-6">
+                <h3 className="text-xl font-semibold mb-4">
+                    {language === 'hi' ? 'मेनू आइटम' : 'Menu Items'}
+                </h3>
+                
+                {filteredItems.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                        <div className="text-6xl mb-4">🔍</div>
+                        <h3 className="text-lg font-medium mb-2">
+                            {language === 'hi' ? 'कोई आइटम नहीं मिला' : 'No items found'}
+                        </h3>
+                        <p className="text-sm">
+                            {language === 'hi' 
+                                ? 'अपने फिल्टर बदलने का प्रयास करें या खोज क्वेरी को साफ़ करें'
+                                : 'Try changing your filters or clearing the search query'
+                            }
+                        </p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {filteredItems.map(item => {
+                            const itemName = language === 'hi' 
+                                ? (item.name_hi || item.name)
+                                : (item.name_en || item.name);
+                                
+                            return (
+                                <div
+                                    key={item.id}
+                                    className={`border rounded-lg p-4 hover:shadow-lg transition-shadow ${
+                                        item.available 
+                                            ? 'border-gray-200 hover:border-green-300' 
+                                            : 'border-red-200 bg-red-50'
+                                    }`}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h4 className="font-semibold text-sm">{itemName}</h4>
+                                        <span
+                                            className={`text-xs px-2 py-1 rounded-full ${
+                                                item.available
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-red-100 text-red-800'
+                                            }`}
+                                        >
+                                            {item.available 
+                                                ? (language === 'hi' ? 'उपलब्ध' : 'Available')
+                                                : (language === 'hi' ? 'अनुपलब्ध' : 'Unavailable')
                                             }
                                         </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <div className="flex space-x-2">
-                                            <button
-                                                onClick={() => setEditingItem(item)}
-                                                className="text-indigo-600 hover:text-indigo-900"
-                                            >
-                                                {language === "hi" ? "[translate:संपादित करें]" : "Edit"}
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteItem(item.id)}
-                                                className="text-red-600 hover:text-red-900"
-                                            >
-                                                {language === "hi" ? "[translate:हटाएं]" : "Delete"}
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                    </div>
+                                    
+                                    <div className="space-y-1 text-sm text-gray-600">
+                                        <p className="font-bold text-green-600">₹{item.price}</p>
+                                        {item.description && (
+                                            <p className="text-xs">{item.description}</p>
+                                        )}
+                                        <p className="text-xs text-blue-600">
+                                            {language === 'hi' ? 'श्रेणी: ' : 'Category: '}
+                                            {item.category_name}
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="mt-3 flex space-x-2">
+                                        <button className="flex-1 bg-blue-500 text-white text-xs py-2 px-3 rounded hover:bg-blue-600">
+                                            {language === 'hi' ? 'संपादित करें' : 'Edit'}
+                                        </button>
+                                        <button className="flex-1 bg-gray-500 text-white text-xs py-2 px-3 rounded hover:bg-gray-600">
+                                            {language === 'hi' ? 'देखें' : 'View'}
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
-
-            {/* Add Category Modal */}
-            {showAddCategory && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-screen overflow-y-auto">
-                        <div className="p-6">
-                            <h3 className="text-xl font-bold mb-4">
-                                {language === "hi" ? "[translate:नई श्रेणी जोड़ें]" : "Add New Category"}
-                            </h3>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:नाम (अंग्रेजी) *]" : "Name (English) *"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={newCategory.name_en}
-                                        onChange={(e) => setNewCategory(prev => ({ ...prev, name_en: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="Category name in English"
-                                        required
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:नाम (हिंदी)]" : "Name (Hindi)"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={newCategory.name_hi}
-                                        onChange={(e) => setNewCategory(prev => ({ ...prev, name_hi: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="[translate:श्रेणी का नाम हिंदी में]"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:विवरण]" : "Description"}
-                                    </label>
-                                    <textarea
-                                        value={newCategory.description}
-                                        onChange={(e) => setNewCategory(prev => ({ ...prev, description: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        rows="3"
-                                        placeholder={language === "hi" ? "[translate:श्रेणी का विवरण...]" : "Category description..."}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-6 flex space-x-3">
-                                <button
-                                    onClick={() => setShowAddCategory(false)}
-                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
-                                >
-                                    {language === "hi" ? "[translate:रद्द करें]" : "Cancel"}
-                                </button>
-                                <button
-                                    onClick={handleCreateCategory}
-                                    className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600"
-                                >
-                                    {language === "hi" ? "[translate:श्रेणी जोड़ें]" : "Add Category"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add Item Modal */}
-            {showAddItem && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-screen overflow-y-auto">
-                        <div className="p-6">
-                            <h3 className="text-xl font-bold mb-4">
-                                {language === "hi" ? "[translate:नया आइटम जोड़ें]" : "Add New Menu Item"}
-                            </h3>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:नाम (अंग्रेजी) *]" : "Name (English) *"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={newItem.name_en}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, name_en: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="Item name in English"
-                                        required
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:नाम (हिंदी)]" : "Name (Hindi)"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={newItem.name_hi}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, name_hi: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="[translate:आइटम का नाम हिंदी में]"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:विवरण (अंग्रेजी)]" : "Description (English)"}
-                                    </label>
-                                    <textarea
-                                        value={newItem.description_en}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, description_en: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        rows="2"
-                                        placeholder="Item description in English"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:विवरण (हिंदी)]" : "Description (Hindi)"}
-                                    </label>
-                                    <textarea
-                                        value={newItem.description_hi}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, description_hi: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        rows="2"
-                                        placeholder="[translate:आइटम का विवरण हिंदी में]"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:कीमत (₹) *]" : "Price (₹) *"}
-                                    </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        value={newItem.price}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, price: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="0.00"
-                                        required
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:श्रेणी *]" : "Category *"}
-                                    </label>
-                                    <select
-                                        value={newItem.category_id}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, category_id: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        required
-                                    >
-                                        <option value="">{language === "hi" ? "[translate:श्रेणी चुनें]" : "Select Category"}</option>
-                                        {categories.map(cat => (
-                                            <option key={cat.id} value={cat.id}>
-                                                {getCategoryDisplayName(cat)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:तैयारी का समय (मिनट)]" : "Preparation Time (minutes)"}
-                                    </label>
-                                    <input
-                                        type="number"
-                                        value={newItem.preparation_time}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, preparation_time: parseInt(e.target.value) || 15 }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder="15"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:एलर्जी]" : "Allergens"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={newItem.allergens}
-                                        onChange={(e) => setNewItem(prev => ({ ...prev, allergens: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        placeholder={language === "hi" ? "[translate:कॉमा से अलग करें]" : "Comma separated"}
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2 flex flex-wrap items-center space-x-4">
-                                    <label className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={newItem.is_veg}
-                                            onChange={(e) => setNewItem(prev => ({ ...prev, is_veg: e.target.checked }))}
-                                            className="mr-2"
-                                        />
-                                        {language === "hi" ? "[translate:शाकाहारी]" : "Vegetarian"}
-                                    </label>
-
-                                    <label className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={newItem.is_spicy}
-                                            onChange={(e) => setNewItem(prev => ({ ...prev, is_spicy: e.target.checked }))}
-                                            className="mr-2"
-                                        />
-                                        {language === "hi" ? "[translate:तीखा]" : "Spicy"}
-                                    </label>
-
-                                    <label className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={newItem.available}
-                                            onChange={(e) => setNewItem(prev => ({ ...prev, available: e.target.checked }))}
-                                            className="mr-2"
-                                        />
-                                        {language === "hi" ? "[translate:उपलब्ध]" : "Available"}
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 flex space-x-3">
-                                <button
-                                    onClick={() => setShowAddItem(false)}
-                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
-                                >
-                                    {language === "hi" ? "[translate:रद्द करें]" : "Cancel"}
-                                </button>
-                                <button
-                                    onClick={handleCreateItem}
-                                    className="flex-1 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600"
-                                >
-                                    {language === "hi" ? "[translate:आइटम जोड़ें]" : "Add Item"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Edit Item Modal */}
-            {editingItem && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-screen overflow-y-auto">
-                        <div className="p-6">
-                            <h3 className="text-xl font-bold mb-4">
-                                {language === "hi" ? "[translate:आइटम संपादित करें]" : "Edit Menu Item"}
-                            </h3>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:नाम (अंग्रेजी) *]" : "Name (English) *"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={editingItem.name_en || editingItem.name}
-                                        onChange={(e) => setEditingItem(prev => ({ ...prev, name_en: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        required
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:नाम (हिंदी)]" : "Name (Hindi)"}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={editingItem.name_hi || ''}
-                                        onChange={(e) => setEditingItem(prev => ({ ...prev, name_hi: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:विवरण (अंग्रेजी)]" : "Description (English)"}
-                                    </label>
-                                    <textarea
-                                        value={editingItem.description_en || editingItem.description || ''}
-                                        onChange={(e) => setEditingItem(prev => ({ ...prev, description_en: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        rows="2"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:विवरण (हिंदी)]" : "Description (Hindi)"}
-                                    </label>
-                                    <textarea
-                                        value={editingItem.description_hi || ''}
-                                        onChange={(e) => setEditingItem(prev => ({ ...prev, description_hi: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        rows="2"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:कीमत (₹) *]" : "Price (₹) *"}
-                                    </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        value={editingItem.price}
-                                        onChange={(e) => setEditingItem(prev => ({ ...prev, price: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                        required
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {language === "hi" ? "[translate:श्रेणी]" : "Category"}
-                                    </label>
-                                    <select
-                                        value={editingItem.category?.id || editingItem.category_id || ''}
-                                        onChange={(e) => {
-                                            const categoryId = e.target.value;
-                                            const category = categories.find(cat => cat.id === parseInt(categoryId));
-                                            setEditingItem(prev => ({ ...prev, category_id: categoryId, category }));
-                                        }}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="">{language === "hi" ? "[translate:श्रेणी चुनें]" : "Select Category"}</option>
-                                        {categories.map(cat => (
-                                            <option key={cat.id} value={cat.id}>
-                                                {getCategoryDisplayName(cat)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="md:col-span-2 flex items-center space-x-4">
-                                    <label className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={editingItem.available}
-                                            onChange={(e) => setEditingItem(prev => ({ ...prev, available: e.target.checked }))}
-                                            className="mr-2"
-                                        />
-                                        {language === "hi" ? "[translate:उपलब्ध]" : "Available"}
-                                    </label>
-
-                                    <label className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={editingItem.is_veg}
-                                            onChange={(e) => setEditingItem(prev => ({ ...prev, is_veg: e.target.checked }))}
-                                            className="mr-2"
-                                        />
-                                        {language === "hi" ? "[translate:शाकाहारी]" : "Vegetarian"}
-                                    </label>
-
-                                    <label className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={editingItem.is_spicy}
-                                            onChange={(e) => setEditingItem(prev => ({ ...prev, is_spicy: e.target.checked }))}
-                                            className="mr-2"
-                                        />
-                                        {language === "hi" ? "[translate:तीखा]" : "Spicy"}
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 flex space-x-3">
-                                <button
-                                    onClick={() => setEditingItem(null)}
-                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
-                                >
-                                    {language === "hi" ? "[translate:रद्द करें]" : "Cancel"}
-                                </button>
-                                <button
-                                    onClick={handleUpdateItem}
-                                    className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600"
-                                >
-                                    {language === "hi" ? "[translate:अपडेट करें]" : "Update Item"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

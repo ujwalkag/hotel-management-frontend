@@ -551,7 +551,7 @@ function RestaurantBillingForm() {
                 <div>Rate us on Google/Zomato</div>
                 ${settings?.specialInstructions ? `
                 <div style="margin-top: 6px; font-style: italic;">
-                    Note: ${settings.specialInstructions}
+[O                    Note: ${settings.specialInstructions}
                 </div>
                 ` : ''}
             </div>
@@ -582,7 +582,7 @@ const handleGenerateBill = async () => {
         if (billingSettings.tableNumber) {
             // Use table-based billing endpoint
             const tableId = availableTables.find(t => t.table_number === billingSettings.tableNumber)?.id;
-            
+
             if (!tableId) {
                 toast.error("Invalid table selected");
                 return;
@@ -652,7 +652,7 @@ Table: ${billingSettings.tableNumber}`, {
                 total_amount: billCalculation.total
             };
 
-            const res = await fetch(`/api/restaurant/enhanced-billing/generate_final_bill/`, {
+            const res = await fetch(`/api/create/restaurant/`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -698,7 +698,7 @@ Professional receipt created!`, {
         }));
         setBillPreview(null);
         if (data.bill_id) {
-                router.push(`/admin/bills/${data.bill_id}`);
+                 router.push(`/bills/${data.bill_id || data.id}`);
             }
         // Navigate to success page if needed
         // router.push('/admin/billing/success');
@@ -1320,5 +1320,7 @@ Professional receipt created!`, {
 }
 
 export default RestaurantBillingForm;
+
+
 
 
